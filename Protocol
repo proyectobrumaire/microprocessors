@@ -1,0 +1,90 @@
+//Estrcutrua general
+[TIMESTAMP]	[CMD]	[PAYLOAD] (Si lo hay. El Payload es de longitud variable)
+6 BYTES 	1 BYTE	X BYTES
+
+//Para tomar una foto (ESP32 Side)
+[TIMESTAMP][CMD_TAKE_PHOTO]
+
+//Para regisrar un evento (ESP32 Side)
+[TIMESTAMP][CMD_SAVE_EVENT][EVENTCODE (1 BYTE)] 
+
+//Para guardar un dato en la SD (ESP32 Side)
+[TIMESTAMP][CMD_SAVE_DATA][[SENSOR_KEY(1 BYTE)][VALUE (4 BYTES)]]
+
+//Para hacer ACK de un comando
+[TIMESTAMP][CMD][OK (1 BYTE; TRUE ES OK)]
+
+
+//Para Hello ?  (Both Sides)
+[TIMESTAMP][CMD_HELLO][SET_TIME]
+
+
+Códigos de la sensores y variables a guardar:
+
+SENSOR_KEY:
+  T1_K = 0x20  // Temp ambiente
+  T2_K = 0x21  // Temp caja interna
+  T3_K = 0x22  // Placa fría 1
+  T4_K = 0x23  // Placa fría 2
+  T5_K = 0x24  // Temp media fría
+  T6_K = 0x25  // Temp objetivo
+  H1_K = 0x26  // Humedad externa
+  H2_K = 0x27  // Humedad interna
+  E1_K = 0x28  // Error
+  E2_K = 0x29  // Error acumulado
+  P1_K = 0x2A  // Punto de rocío
+  P2_K = 0x2B  // PWM aplicado
+  I1_K = 0x2C  //Corriente uno
+  I2_K = 0x2D  //Corriente dos
+  I3_K = 0x2E  //Corriente tres
+  W1_K = 0x2F   //Peso del agua
+
+CMD:
+  CMD_TAKE_PHOTO    = 0x01
+  CMD_SAVE_EVENT    = 0x02
+  CMD_SAVE_DATA     = 0x03
+  CMD_HELLO         = 0x04
+
+EVENTCODE:
+  BOOT        = 0x80
+  BIRD        = 0x81
+  PERIODIC    = 0x82
+
+HELLO_MODES:
+  SET_TIME        = 0xA0
+  STATUS        = 0xA1
+
+
+//El arduino pushea la hora hacia ESP32 cada que hay una intereupción de reloj. (SET)
+
+//El ESP32 envía un SET con la hora hacia el arduino-->RTC cada que recibe la hora de un endpoint.
+
+
+//Para mirar si el ESP32 está conectado como cliente
+curl http://192.168.4.1/
+
+//Para cambiar la red cliente del ESP32 (Ej: Univalle)
+curl -X POST "http://192.168.4.1/wifi" \
+-H "Content-Type: application/json" \
+-u admin:admin \
+  -d '{
+    "ssid": "Familia Orozco2",
+    "password": "jazz9954"
+  }'
+  
+//Para listar los archivos de la sd: OJO -> método pesado
+curl http://192.168.4.1/files
+
+//Para descargar archivo log. Query Param file
+curl -o log.txt http://192.168.4.1/download?file=log.txt
+
+//Ej para descargar cualquier foto. Query Param file
+curl -o uwu.jpg http://192.168.4.1:80/download?file=image_2025-11-17T23-26-20_3.jpg
+
+
+curl -X  DELETE "http://192.168.4.1:80/files?file=image_2025-11-17T23-26-20_3.jpg"
+
+
+
+ 
+ 	
