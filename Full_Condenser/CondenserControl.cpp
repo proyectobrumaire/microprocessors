@@ -16,6 +16,32 @@ void CondenserControl::iniciar_control(){
   if (!tc2.begin()) { Serial.println("ERROR termocupla 2."); while (1) delay(10); }
   dht1.begin();
   dht2.begin();
+  balanza.begin(pins.dout, pins.clk);
+  //Balanza
+  byte flag = EEPROM.read(EEPROM_FLAG_ADDR);
+
+  if (flag != CALIB_OK || borrar_datos_eeprom) {
+    autoTareInicial(); //Se hace el tare ahí mismo
+  } else {
+    long offset;
+    float escala;
+    cargarCalibracion(offset, escala);
+    balanza.set_scale(escala);
+    balanza.set_offset(offset);
+
+    Serial.println("Calibracion cargada desde EEPROM:");
+    Serial.print("Offset: ");
+    Serial.println(offset);
+    Serial.print("Escala: ");
+    Serial.println(escala, 3);
+    Serial.println("Listo para medir");
+  }
+
+  //L298N
+  PrenderMotor();
+  Serial.println("Vibración activada");
+  motorEncendido = true;
+
   // Ventiladores
   pinMode(pins.ena, OUTPUT);
   pinMode(pins.in1, OUTPUT);
@@ -90,6 +116,7 @@ void CondenserControl::leer_sensores_y_controlar(){
     pwm = (tempObjetivo - 28.0) / -0.0745;
     pwm = constrain(pwm, 0, 255);
     analogWrite(pins.rpwm, (int)pwm); //Ejecutar el control
+    }
 
     //Lecturas del sensor de corriente
     float averageRawReading1 = (float)analogRead(pins.cSP1);
@@ -116,7 +143,7 @@ void CondenserControl::leer_sensores_y_controlar(){
     if (current_mA3 < MIN_CURRENT_THRESHOLD_mA) {current_mA3 = 0.0f;}
 
     //Aquí se debe modificar peso_agua
-    peso_agua = 1.0;
+    peso_agua = balanza.get_units(20);
 
 
     //Esto no se puede interumpir...
@@ -158,7 +185,6 @@ void CondenserControl::leer_sensores_y_controlar(){
     Serial.print("Correinte 3: "); Serial.println(current_mA3);
     Serial.print("Peso : "); Serial.println(peso_agua);
     Serial.println("-----------");
-  }
 }
 
 
@@ -204,6 +230,29 @@ void CondenserControl::ApagarMotor(){
     analogWrite(pins.enb, 0);
 }
 
+void CondenserControl::autoTareInicial() {
+  Serial.println("Realizando tare inicial...");
+
+  balanza.set_scale(SCALE_DEFAULT);
+  balanza.tare(20);
+  long suma = 0;
+  for (int i = 0; i < 5; i++) {
+    long lectura = balanza.read();   // lectura RAW directa
+    suma += lectura;
+    delay(50);
+  }
+  long offset_promedio = suma/5;
+  balanza.set_offset(offset_promedio);
+  guardarCalibracion(offset_promedio, SCALE_DEFAULT);
+
+  Serial.println("Tara inicial completada y almacenada.");
+  Serial.print("Offset promedio guardado: ");
+  Serial.println(offset_promedio);
+  Serial.print("Escala guardada: ");
+  Serial.println(SCALE_DEFAULT, 3);
+  Serial.println();
+}
+
 //Helpers
 //Clacula el punto de rocío
 float CondenserControl::calcularPuntoRocio(float temperaturaC, float humedadRelativa) {
@@ -212,7 +261,18 @@ float CondenserControl::calcularPuntoRocio(float temperaturaC, float humedadRela
   return puntoRocio;
 }
 
-float CondenserControl::safe_avg(float  sum, int n)  { return (n > 0) ? (sum / static_cast<float>(n))  : NAN; }
 //Salvar si la división es entre 0
+float CondenserControl::safe_avg(float  sum, int n)  { return (n > 0) ? (sum / static_cast<float>(n))  : NAN; }
 
+//Cargar calibración desde la EEPROM
+void CondenserControl::cargarCalibracion(long &offset, float &escala) {
+  EEPROM.get(EEPROM_OFFSET_ADDR, offset);
+  EEPROM.get(EEPROM_SCALE_ADDR,  escala);
+}
 
+//Guadar Calibración
+void CondenserControl::guardarCalibracion(long offset, float escala) {
+  EEPROM.put(EEPROM_OFFSET_ADDR, offset);
+  EEPROM.put(EEPROM_SCALE_ADDR,  escala);
+  EEPROM.write(EEPROM_FLAG_ADDR,  CALIB_OK);
+}

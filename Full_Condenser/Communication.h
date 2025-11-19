@@ -6,6 +6,9 @@
 #include <SerialTransfer.h>
 #include <Arduino.h>
 
+
+
+
 class CondenserCom {
 public:
   struct Pins {
@@ -32,7 +35,7 @@ public:
     I1_K = 0x2C,  //Corriente uno
     I2_K = 0x2D,  //Corriente dos
     I3_K = 0x2E,  //Corriente tres
-    W1_K = 0x2F   //Corriente tres
+    W1_K = 0x2F   //Peso agua
   };
 
   //Códigos de la trama:
@@ -75,8 +78,12 @@ public:
   uint32_t duracion;
   volatile uint32_t lastSensorFlagRaisen = 0;
 
+
 private:
   Pins pins;
+
+  const uint32_t min_sensor_duration = 50; // 0 cm
+  const uint32_t max_sensor_duration = 2500; // 40 cm
 
   
 

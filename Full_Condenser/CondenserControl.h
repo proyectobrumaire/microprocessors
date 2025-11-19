@@ -7,6 +7,8 @@
 #include <DHT_U.h>
 #include "Adafruit_MAX31855.h"
 #include <Arduino.h>
+#include <HX711.h>
+#include <EEPROM.h>
 
 class CondenserControl {
     //estructura que aloja los pines (no son los pines en sí)
@@ -23,6 +25,8 @@ class CondenserControl {
             uint8_t rpwm, lpwm, ren, len;
             //Sensor de corriente
             uint8_t cSP1, cSP2, cSP3;
+            //Balanza
+            uint8_t dout, clk;
         };
 
         static const size_t N_DATA_CRL = 16;
@@ -44,11 +48,25 @@ class CondenserControl {
         DHT_Unified dht1;       
         DHT_Unified dht2;       
         Adafruit_MAX31855 tc1;    
-        Adafruit_MAX31855 tc2;    
+        Adafruit_MAX31855 tc2;
+        HX711 balanza;
         sensors_event_t event{};  
 
         //motor
         bool motorEncendido;
+
+        //Escala de la balanza
+        const float SCALE_DEFAULT = -422.55f;
+
+        // Direcciones de EEPROM
+        const int EEPROM_OFFSET_ADDR = 0;  // long (4 bytes)
+        const int EEPROM_SCALE_ADDR  = 4;  // float (4 bytes)
+        const int EEPROM_FLAG_ADDR   = 8;  // byte (1 byte)
+        bool borrar_datos_eeprom = false;  // Señal para re-tarear
+
+
+        // Identificador de datos válidos
+        const byte CALIB_OK = 0x42;
 
         //Medición de corriente
         const float Rshunt1 = 0.1; // Por ejemplo, 0.1 Ohm
@@ -114,4 +132,7 @@ class CondenserControl {
         void reset_acumuladores();
         float calcularPuntoRocio (float temperaturaC, float humedadRelativa);
         float safe_avg(float  sum, int n);
+        void cargarCalibracion(long &offset, float &escala);
+        void guardarCalibracion(long offset, float escala);
+        void autoTareInicial();
 };

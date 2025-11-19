@@ -55,7 +55,7 @@ void CondenserCom::onSensorISR() {
     startPulse = now_isr;
   } else {  //Falling edge
     duracion = now_isr - startPulse;
-    if (duracion > 3000 && duracion < 4000){ //rango de 20 cm de (50 cm - 70 cm)
+    if (duracion > min_sensor_duration && duracion < max_sensor_duration){ //rango de detección
       flag_sensor = true;
       lastSensorFlagRaisen = now_isr;
     } else { 

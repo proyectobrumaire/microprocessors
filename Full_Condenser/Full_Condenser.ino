@@ -5,16 +5,10 @@
 
 const int N_Sensores = 16;
 
-//motor
-bool motorEncendido;
 
 /*=========TIEMPOS=========*/
 unsigned long t_tikcer_anterior = 0;
-unsigned long t_ctrl_anterior = 0;
-const int tiempoEncendido = 180;  // Tiempo de vibración en segundos
-const int tiempoApagado = 30;     // Tiempo de reposo en segundos
-const int tiempoLectura = 1;      // Intervalo de lectura de sensores en segundos
-int tiempoMotor = 0;  //Tiempo actual del motor (encendido o apagado)
+const int tiempoLectura = 1;      // Intervalo de lectura y control en segundos
 int tiempoSensor = 0; //Tiempo actual del sensor
 
 
@@ -37,7 +31,9 @@ CondenserControl::Pins ctrlCom{
   // IBT-2 (rpwm,lpwm,ren,len)
   8, 9, 10, 11,
   //Sensor de corriente
-  A2, A3, A4
+  A2, A3, A4,
+  //Balanza
+  A1, A0
 };
 
 //Instanciar las clases
@@ -60,7 +56,7 @@ void setup(void) {
 
   ctrl.leer_sensores_y_controlar();
   ctrl.promediar(sensores_promedio); //Primera lectura
-  com.report_boot(sensores_promedio);
+  com.report_boot(sensores_promedio); //Repotar el boot
 }
 
 
@@ -68,7 +64,7 @@ void loop(void) {
 
   //Eviar pulso (Aquí sucede una interrupción) por el mismo sensor
   com.sendSensorPulse();
-  delay(60);
+  delay(60); //No sobre carga por la int
   
   //Manejar la interrupción del timer
  if (com.takeTimerFlag()) {
@@ -90,34 +86,12 @@ void loop(void) {
   unsigned long t_tikcer_actual = millis();  //Cuánto lleva prendido el arduino en milisegundos
   if (t_tikcer_actual - t_tikcer_anterior >= 1000) {
     t_tikcer_anterior = t_tikcer_actual;
-    //Serial.print("tiempo Motor: ");
-    //Serial.println(tiempoMotor);
-    //Serial.print("tiempo Sensor: ");
-    //Serial.println(tiempoSensor);
-    tiempoMotor++;
     tiempoSensor++;
   }
 
-  // Encendido y apagado del vibrador
-  if (motorEncendido) {
-    if (tiempoMotor == tiempoEncendido) {
-      ctrl.ApagarMotor();
-      Serial.println("Vibración desactivada");
-      motorEncendido = false;
-      tiempoMotor = 0;
-    }
-  } else {
-    if (tiempoMotor == tiempoApagado) {
-      ctrl.PrenderMotor();
-      Serial.println("Vibración activada");
-      motorEncendido = true;
-      tiempoMotor = 0;
-    }
-  }
-
-  // Lectura de sensores
+  // Lectura de sensores cada tiempoLectura
   if (tiempoSensor == tiempoLectura) {
-    ctrl.leer_sensores_y_controlar();
+    ctrl.leer_sensores_y_controlar();  //Aquí se ejecuta el control
     tiempoSensor = 0;
   }
   //com.recieve_commands();
