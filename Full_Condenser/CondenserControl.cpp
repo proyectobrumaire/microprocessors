@@ -4,8 +4,8 @@
 //constructor
 CondenserControl::CondenserControl(const CondenserControl::Pins& p)
 : pins(p),
-  dht1(p.dht_pin1, p.dht_type),
-  dht2(p.dht_pin2, p.dht_type),
+  dht1(p.dht_pin1, DHT22),
+  dht2(p.dht_pin2, DHT22),
   tc1(p.max_clk1, p.max_cs1, p.max_d01),
   tc2(p.max_clk2, p.max_cs2, p.max_d02) {
 } //Aqupi solamente se llama al constructor para poblar p (que son los pines)
@@ -16,26 +16,7 @@ void CondenserControl::iniciar_control(){
   if (!tc2.begin()) { Serial.println("ERROR termocupla 2."); while (1) delay(10); }
   dht1.begin();
   dht2.begin();
-  balanza.begin(pins.dout, pins.clk);
-  //Balanza
-  byte flag = EEPROM.read(EEPROM_FLAG_ADDR);
-
-  if (flag != CALIB_OK || borrar_datos_eeprom) {
-    autoTareInicial(); //Se hace el tare ahí mismo
-  } else {
-    long offset;
-    float escala;
-    cargarCalibracion(offset, escala);
-    balanza.set_scale(escala);
-    balanza.set_offset(offset);
-
-    Serial.println("Calibracion cargada desde EEPROM:");
-    Serial.print("Offset: ");
-    Serial.println(offset);
-    Serial.print("Escala: ");
-    Serial.println(escala, 3);
-    Serial.println("Listo para medir");
-  }
+  balanzaInicial(); //Inicia la balanza
 
   //L298N
   PrenderMotor();
@@ -142,8 +123,8 @@ void CondenserControl::leer_sensores_y_controlar(){
     if (current_mA2 < MIN_CURRENT_THRESHOLD_mA) {current_mA2 = 0.0f;}
     if (current_mA3 < MIN_CURRENT_THRESHOLD_mA) {current_mA3 = 0.0f;}
 
-    //Aquí se debe modificar peso_agua
-    if (balanza.wait_ready_timeout(1000)) {
+    //Aquí se debe modificar peso_agua. Evitar método bloqueante
+    if (is_balanza) {
       peso_agua = balanza.get_units(20);
     }
 
@@ -242,32 +223,54 @@ void CondenserControl::ApagarMotor(){
     analogWrite(pins.enb, 0);
 }
 
-void CondenserControl::autoTareInicial() {
-  Serial.println("Realizando tare inicial...");
+void CondenserControl::balanzaInicial() {
+  Serial.println("Iniciando Balanza...");
+  balanza.begin(pins.dout, pins.clk);
 
-  balanza.set_scale(SCALE_DEFAULT);
-  if (balanza.wait_ready_timeout(1000)){
-  balanza.tare(20);
-  long suma = 0;
-  for (int i = 0; i < 5; i++) {
-    long lectura = balanza.read();   // lectura RAW directa
-    suma += lectura;
-    delay(50);
-  }
-  long offset_promedio = suma/5;
-  balanza.set_offset(offset_promedio);
-  guardarCalibracion(offset_promedio, SCALE_DEFAULT);
-  
-
-  Serial.println("Tara inicial completada y almacenada.");
-  Serial.print("Offset promedio guardado: ");
-  Serial.println(offset_promedio);
-  Serial.print("Escala guardada: ");
-  Serial.println(SCALE_DEFAULT, 3);
-  Serial.println();
-  } else {
+  if (!balanza.wait_ready_timeout(1000)){
+    is_balanza = false;
     Serial.println("Balanza no encontrada");
+    return;
   }
+
+  is_balanza = true;
+  byte flag = EEPROM.read(EEPROM_FLAG_ADDR);
+
+  if (flag != CALIB_OK || borrar_datos_eeprom) {
+    balanza.set_scale(SCALE_DEFAULT);
+    balanza.tare(20);
+    long suma = 0;
+    for (int i = 0; i < 5; i++) {
+      long lectura = balanza.read();   // lectura RAW directa
+      suma += lectura;
+      delay(50);
+    }
+    long offset_promedio = suma/5;
+    balanza.set_offset(offset_promedio);
+    guardarCalibracion(offset_promedio, SCALE_DEFAULT);
+    
+
+    Serial.println("Tara inicial completada y almacenada.");
+    Serial.print("Offset promedio guardado: ");
+    Serial.println(offset_promedio);
+    Serial.print("Escala guardada: ");
+    Serial.println(SCALE_DEFAULT, 3);
+    Serial.println();
+
+  } else {
+    long offset;
+    float escala;
+    cargarCalibracion(offset, escala);
+    balanza.set_scale(escala);
+    balanza.set_offset(offset);
+
+    Serial.println("Calibracion cargada desde EEPROM:");
+    Serial.print("Offset: ");
+    Serial.println(offset);
+    Serial.print("Escala: ");
+    Serial.println(escala, 3);
+    Serial.println("Listo para medir");
+  }    
 }
 
 //Helpers

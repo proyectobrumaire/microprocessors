@@ -16,7 +16,7 @@ class CondenserControl {
         struct  Pins
         {
             //DHT   
-            uint8_t dht_pin1, dht_pin2, dht_type;
+            uint8_t dht_pin1, dht_pin2;
             // Termocuplas
             uint8_t max_d01, max_cs1, max_clk1, max_d02, max_cs2, max_clk2;
             //L298N
@@ -52,6 +52,8 @@ class CondenserControl {
         Adafruit_MAX31855 tc1;    
         Adafruit_MAX31855 tc2;
         HX711 balanza;
+
+        bool is_balanza;
         sensors_event_t event{};  
 
         //motor
@@ -138,5 +140,5 @@ class CondenserControl {
         float safe_avg(float  sum, int n);
         void cargarCalibracion(long &offset, float &escala);
         void guardarCalibracion(long offset, float escala);
-        void autoTareInicial();
+        void balanzaInicial();
 };

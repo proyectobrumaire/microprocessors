@@ -19,21 +19,23 @@ float maxIntegracion = 100.0;
 
 
 // Inicialización posicional (NO designators)
-CondenserCom::Pins pinsCom{ 18, 19, 12}; //sensor_interrupt, timer_interrupt, trig
+CondenserCom::Pins pinsCom{18, 19, 12}; //sensor_interrupt, timer_interrupt, trig
 
 CondenserControl::Pins ctrlCom{
-  // DHT
-  30, 31, DHT22,
-  // MAX31855 (tc1, tc2)
+  // DHT (dht_pin1, dht_pin2)
+  30, 31,
+  // MAX31855  (max_d01, max_cs1, max_clk1, max_d02, max_cs2, max_clk2);
   22, 23, 24, 25, 26, 27,
   // L298N (in1,in2,ena,in3,in4,enb)
   2, 3, 4, 5, 6, 7,
   // IBT-2 (rpwm,lpwm,ren,len)
-  8, 9, 10, 11,
-  //Sensor de corriente
-  A2, A3, A4,
-  //Balanza
-  A1, A0
+  8, 9, 10, 11, 
+  //Sensor de corriente (cSP1, cSP2, cSP3);
+  A3, A4, A5,
+  //Balanza (dout, clk)
+  A1, A0,
+  //Sensor Mario
+  A2
 };
 
 //Instanciar las clases
