@@ -98,6 +98,8 @@ void CondenserCom::sendSensorPulse(){
 }
 
 void CondenserCom::when_event(uint8_t TYPE, float values_to_send[N_DATA]) {
+  //Este método solo debe habilitarse si el lock está abierto
+  
   //Este método enviar los datos al ESP32 cuando se detecta un evento
   p.get_time(); //Obtener fecha y hora sobre p
   uint16_t len;

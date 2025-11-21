@@ -21,7 +21,7 @@ void CondenserControl::iniciar_control(){
   byte flag = EEPROM.read(EEPROM_FLAG_ADDR);
 
   if (flag != CALIB_OK || borrar_datos_eeprom) {
-    autoTareInicial(); //Se hace el tare ahí mismo
+    //autoTareInicial(); //Se hace el tare ahí mismo
   } else {
     long offset;
     float escala;
@@ -143,7 +143,7 @@ void CondenserControl::leer_sensores_y_controlar(){
     if (current_mA3 < MIN_CURRENT_THRESHOLD_mA) {current_mA3 = 0.0f;}
 
     //Aquí se debe modificar peso_agua
-    peso_agua = balanza.get_units(20);
+    //peso_agua = balanza.get_units(20);
 
 
     //Esto no se puede interumpir...
