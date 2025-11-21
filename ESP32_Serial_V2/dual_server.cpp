@@ -1,8 +1,5 @@
 #include "dual_server.h"
 
-volatile bool sd_busy = false;
-volatile uint32_t sd_busy_since = 0;
-const uint32_t SD_BUSY_MAX_TIME = 300000; // 300s
 
 //Archivo de config
 static const char* FILENAME_CONFIG = "/config.json";
@@ -26,6 +23,16 @@ const char* ntpServer = "pool.ntp.org";
 const long  gmtOffset_sec = 0;
 const int   daylightOffset_sec = 3600;
 
+// Máximo de archivos a devolver en la respuesta
+const int MAX_FILES_RESPONSE = 20;     // o 100, según quieras
+
+// Longitud máxima de nombre de archivo que se puede guardar
+const int MAX_FILENAME_LEN   = 64;     // si usas rutas cortas, con 64 suele bastar
+
+struct FileInfo {
+  char  name[MAX_FILENAME_LEN];     // nombre de archivo fijo
+  uint32_t size;                       // tamaño en bytes
+};
 
 void startHttpRoutes() {
   server.on("/", handleHome);
@@ -214,14 +221,15 @@ void handleWiFiSTA(){
   if (!is_authenticated()) {
   return;
   }
-
-  if (!detect_sd()) { sendJSON(503, jsonError("No SD Card present")); return; }
+  send_lock_arduino();
+  if (!detect_sd()) { sendJSON(503, jsonError("No SD Card present")); send_unlock_arduino(); return; }
 
   if (server.hasArg("plain")) {
     const String body_plain = server.arg("plain");
     DeserializationError error = deserializeJson(body, body_plain);
     if (error) {
       sendJSON(400, jsonError("deserializeJson() failed: "));
+      send_unlock_arduino();
       return;
     }
 
@@ -230,20 +238,26 @@ void handleWiFiSTA(){
 
     if (!ssid_req || !*ssid_req || !password_req || !*password_req) {
       sendJSON(400, jsonError("ssid and password required in body")); 
+      send_unlock_arduino();
       return;
     }
 
+    
     write_config(ssid_req, password_req); //Subimos la config a la sd
     if (read_config(sta_ssid, sta_password)){
       reconnectSTA();
     }
+    sendJSON(200, jsonMessage("config File updated"));
+    send_unlock_arduino();
+    return;
 
     
 
-    sendJSON(200, jsonMessage("config File updated"));
+    
 
   }else{
     sendJSON(400, jsonError("Cuerpo requerido"));
+    send_unlock_arduino();
     return;
   }
 }
@@ -252,44 +266,100 @@ void handleWiFiSTA(){
 
 // GET /files  -> lista archivos de la raíz en JSON
 void handleListFiles() {
-  if (!detect_sd()) { sendJSON(503, jsonError("No SD Card present")); return; }
+  // Si quieres, aquí podrías mandar LOCK al Arduino antes de empezar
+  send_lock_arduino();
 
-  sd_busy = true;
-  sd_busy_since = millis();
+  if (!detect_sd()) {
+    sendJSON(503, jsonError("No SD Card present"));
+    send_unlock_arduino();
+    return;
+  }
 
   File root = SD_MMC.open("/");
   if (!root || !root.isDirectory()) {
     sendJSON(500, jsonError("No se pudo abrir el directorio raiz"));
-    sd_busy = false;
+    send_unlock_arduino();
     return;
   }
 
-  String out = "[\n";
-  bool first = true;
+  // Ventana deslizante: solo guardamos los últimos N archivos
+  FileInfo lastFiles[MAX_FILES_RESPONSE];
+  int stored = 0;   // cuántos archivos tenemos realmente guardados (<= MAX_FILES_RESPONSE)
+  int head   = 0;   // índice circular donde se insertar á el siguiente
+  int total  = 0;   // total de archivos vistos en la raíz (para has_more)
 
   File entry = root.openNextFile();
   while (entry) {
     if (!entry.isDirectory()) {
-      if (!first) out += ",\n";
-      first = false;
-      out += "  {\"file\":\"";
-      out += String(entry.name());
+      // Copiar nombre al buffer de longitud fija
+      const char* entryName = entry.name();
+      // strncpy garantiza que no nos pasamos; agregamos '\0' al final
+      strncpy(lastFiles[head].name, entryName, MAX_FILENAME_LEN - 1);
+      lastFiles[head].name[MAX_FILENAME_LEN - 1] = '\0';
+
+      // Guardar tamaño
+      lastFiles[head].size = (uint32_t) entry.size();
+
+      // Avanzar en el buffer circular
+      head = (head + 1) % MAX_FILES_RESPONSE;
+      if (stored < MAX_FILES_RESPONSE) {
+        stored++;
+      }
+
+      total++;
+    }
+
+    entry = root.openNextFile();
+    yield();  // por si hay muchos archivos, no bloquear del todo
+  }
+
+  root.close();
+
+  bool has_more = (total > stored);
+
+  // --- Construir JSON (máx. N archivos, así que el String no se hace enorme) ---
+  String out = "{\n  \"files\": [\n";
+
+  if (stored > 0) {
+    // Reconstruimos en orden lógico: del más antiguo de los N últimos al más reciente
+    int startIdx;
+    if (stored < MAX_FILES_RESPONSE) {
+      // No llenamos el buffer: están en 0..stored-1 en orden de aparición
+      startIdx = 0;
+    } else {
+      // Buffer lleno: el más antiguo está donde apunta head (porque head es el siguiente en escribirse)
+      startIdx = head;
+    }
+
+    for (int i = 0; i < stored; i++) {
+      int idx = (startIdx + i) % MAX_FILES_RESPONSE;
+
+      if (i > 0) out += ",\n";
+      out += "    {\"file\":\"";
+      out += lastFiles[idx].name;         // ya es un char[]
       out += "\",\"size\":";
-      out += String((uint32_t)entry.size());
+      out += String(lastFiles[idx].size);
       out += "}";
     }
-    entry = root.openNextFile();
   }
-  out += "\n]";
-  root.close();
-  sd_busy = false;
+
+  out += "\n  ],\n";
+  out += "  \"has_more\": ";
+  out += has_more ? "true" : "false";
+  out += ",\n";
+  out += "  \"total\": ";
+  out += String(total);
+  out += "\n}";
+
   sendJSON(200, out);
-  
+
+  send_unlock_arduino();
+  return;
 }
 
-
 void handleDownload() {
-  if (!detect_sd()) { sendJSON(503, jsonError("No SD Card present")); return; }
+  send_lock_arduino();
+  if (!detect_sd()) { sendJSON(503, jsonError("No SD Card present")); send_unlock_arduino(); return; }
 
   // 1) Intentar query string ?file=...
   String filename = server.hasArg("file") ? server.arg("file") : String();
@@ -297,17 +367,17 @@ void handleDownload() {
 
   if (filename.length() == 0) {
     sendJSON(400, jsonError("Parametro 'file' requerido"));
+    send_unlock_arduino();
     return;
   }
 
-  sd_busy = true;
-  sd_busy_since = millis();
 
+  
   if (!filename.startsWith("/")) filename = "/" + filename;
   File f = SD_MMC.open(filename, FILE_READ);
   if (!f) {
     sendJSON(404, jsonError("Archivo no encontrado"));
-    sd_busy = false;
+    send_unlock_arduino();
     return;
   }
 
@@ -317,13 +387,15 @@ void handleDownload() {
   server.sendHeader("Content-Disposition", "attachment; filename=" + String(filename.c_str()+1)); // sin la barra inicial
   server.streamFile(f, "application/octet-stream");
   f.close();
-  sd_busy = false;
+  send_unlock_arduino();
+  return;
 }
 
 
 // DELETE /files
 void handleDelete() {
-  if (!detect_sd()) { sendJSON(503, jsonError("No SD Card present")); return; }
+  send_lock_arduino();
+  if (!detect_sd()) { sendJSON(503, jsonError("No SD Card present")); send_unlock_arduino(); return; }
 
   String filename = server.hasArg("file") ? server.arg("file") : String();
 
@@ -332,14 +404,17 @@ void handleDelete() {
 
   if (filename.length() == 0) {
     sendJSON(400, jsonError("Parametro 'file' requerido"));
+    send_unlock_arduino();
     return;
   }
+  
   if (!filename.startsWith("/")) filename = "/" + filename; //Añadir root a la ruta
 
   // Verificar existencia
   File f = SD_MMC.open(filename, FILE_READ);
   if (!f) {
     sendJSON(404, jsonError("Archivo no encontrado"));
+    send_unlock_arduino();
     return;
   }
   f.close();
@@ -347,6 +422,8 @@ void handleDelete() {
   bool ok = SD_MMC.remove(filename);
   if (ok) sendJSON(200, jsonMessage("Archivo eliminado con éxito"));
   else    sendJSON(500, jsonError("archivo no eliminado"));
+  send_unlock_arduino();
+  return;
 }
 
 

@@ -21,7 +21,7 @@ void CondenserControl::iniciar_control(){
   byte flag = EEPROM.read(EEPROM_FLAG_ADDR);
 
   if (flag != CALIB_OK || borrar_datos_eeprom) {
-    //autoTareInicial(); //Se hace el tare ahí mismo
+    autoTareInicial(); //Se hace el tare ahí mismo
   } else {
     long offset;
     float escala;
@@ -143,7 +143,9 @@ void CondenserControl::leer_sensores_y_controlar(){
     if (current_mA3 < MIN_CURRENT_THRESHOLD_mA) {current_mA3 = 0.0f;}
 
     //Aquí se debe modificar peso_agua
-    //peso_agua = balanza.get_units(20);
+    if (balanza.wait_ready_timeout(1000)) {
+      peso_agua = balanza.get_units(20);
+    }
 
 
     //Esto no se puede interumpir...
@@ -234,6 +236,7 @@ void CondenserControl::autoTareInicial() {
   Serial.println("Realizando tare inicial...");
 
   balanza.set_scale(SCALE_DEFAULT);
+  if (balanza.wait_ready_timeout(1000)){
   balanza.tare(20);
   long suma = 0;
   for (int i = 0; i < 5; i++) {
@@ -244,6 +247,7 @@ void CondenserControl::autoTareInicial() {
   long offset_promedio = suma/5;
   balanza.set_offset(offset_promedio);
   guardarCalibracion(offset_promedio, SCALE_DEFAULT);
+  
 
   Serial.println("Tara inicial completada y almacenada.");
   Serial.print("Offset promedio guardado: ");
@@ -251,6 +255,9 @@ void CondenserControl::autoTareInicial() {
   Serial.print("Escala guardada: ");
   Serial.println(SCALE_DEFAULT, 3);
   Serial.println();
+  } else {
+    Serial.println("Balanza no encontrada");
+  }
 }
 
 //Helpers

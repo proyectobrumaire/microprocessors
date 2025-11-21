@@ -61,6 +61,8 @@ void setup(void) {
 
 
 void loop(void) {
+  com.safety_lock_timeout(); //Verificar que no se haya vencido el lock del esp32
+  com.recieve_commands(); //Por si hay que bloquear el serial
 
   //Eviar pulso (Aquí sucede una interrupción) por el mismo sensor
   com.sendSensorPulse();
@@ -94,5 +96,4 @@ void loop(void) {
     ctrl.leer_sensores_y_controlar();  //Aquí se ejecuta el control
     tiempoSensor = 0;
   }
-  //com.recieve_commands();
 }

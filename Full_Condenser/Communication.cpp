@@ -99,6 +99,10 @@ void CondenserCom::sendSensorPulse(){
 
 void CondenserCom::when_event(uint8_t TYPE, float values_to_send[N_DATA]) {
   //Este método solo debe habilitarse si el lock está abierto
+  if (esp_busy) {
+    Serial.println("Lock is active, not sending command");
+    return;
+  }
   
   //Este método enviar los datos al ESP32 cuando se detecta un evento
   p.get_time(); //Obtener fecha y hora sobre p
@@ -149,6 +153,7 @@ void CondenserCom::when_event(uint8_t TYPE, float values_to_send[N_DATA]) {
 
   // 2) ENVIAR DATOS DE LOS SENSORES
   cmd = CMD_SAVE_DATA;
+  bool keep_acking = true;
   for (size_t i=0; i<N_DATA; i++) {
     len = 0;
     len = link.txObj(ts,  len, sizeof(ts));
@@ -156,10 +161,21 @@ void CondenserCom::when_event(uint8_t TYPE, float values_to_send[N_DATA]) {
     len = link.txObj(kAllKeys[i],  len);
     len = link.txObj(values_to_send[i],  len);
     link.sendData(len); //Enviar el evento
-    if (!wait_for_ack(cmd)) {
-      Serial.println("Exiting comand [save data] since bad or no response");
-      //return;
-      Serial.println("Nah...Sending shit anyway");
+    if (i == 0){
+      if (!wait_for_ack(cmd)) {
+        Serial.println("Exiting comand [save data] since bad or no response");
+        Serial.println("Nah...Sending shit anyway");
+        keep_acking = false;
+        //break;
+      }
+    } else {
+      if (keep_acking){
+        if (!wait_for_ack(cmd)) {
+          Serial.println("Exiting comand [save data] since bad or no response");
+          Serial.println("Nah...Sending shit anyway");
+          //break;
+        }
+      }
     }
 
   }
@@ -219,12 +235,18 @@ void CondenserCom::report_boot(float values[N_DATA]){
   when_event(BOOT, values);
 }
 
+
+void CondenserCom::safety_lock_timeout(){
+  if (esp_busy && (millis() - esp_busy_since > ESP_BUSY_TIMEOUT)) {
+    esp_busy = false;  // liberación de emergencia
+  }
+}
+
 void CondenserCom::recieve_commands(){
   if(link.available()){
     uint16_t index = 0;
     uint8_t ts[6]; //Timestamp
     uint8_t cmd; //Qué comando llegó
-    String line_to_sd = "";
 
     //Primero lee el timestamp
     index = link.rxObj(ts, index);
@@ -232,39 +254,16 @@ void CondenserCom::recieve_commands(){
     //Ahora lee el comando
     index = link.rxObj(cmd, index);
     switch (cmd){
-       //tomar la foto perro
-      case CMD_HELLO:{
 
-        uint8_t mode; //En qué modo está el Hello
-        index = link.rxObj(mode, index);
-        switch (mode){
-          case SET_TIME:
-            p.year = ts[0];
-            p.month = ts[1];
-            p.day = ts[2];
-            p.hour = ts[3];
-            p.minute = ts[5];
-            p.second = ts[5];
-            p.set_time();
+      case CMD_LOCKARDUINO: {
+        esp_busy_since = millis();
+        esp_busy = true;
+        Serial.println("locking arduino serial...");
+      }
 
-            
-            char ts_string[20];
-            snprintf(ts_string, sizeof(ts_string),
-              "%02u-%02u-%02uT%02u-%02u-%02u",
-              ts[0], ts[1], ts[2], ts[3], ts[4], ts[5]);
-            Serial.println("Sending event at time: ");
-            Serial.print(ts_string);
-            break;
-
-          case STATUS:
-            //TODO
-            break;
-          default: 
-            Serial.println("Wrong Hello Payload");
-            break;
-      
-        }
-
+      case CMD_UNLOCKARDUINO: {
+        esp_busy = false;
+        Serial.println("UNlocking arduino serial...");
       }
       // Código si no coincide con ningún "case
       default:

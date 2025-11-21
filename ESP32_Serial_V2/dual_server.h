@@ -10,16 +10,14 @@
 #include "Arduino.h"
 #include <ArduinoJson.h>
 
+void send_lock_arduino();
+void send_unlock_arduino();
+
 extern ESP32WebServer server;
 
 bool is_authenticated();
 
 void initMicroSDCard_Server();
-
-extern volatile bool sd_busy;
-extern volatile uint32_t sd_busy_since;
-extern const uint32_t SD_BUSY_MAX_TIME; 
-
 
 void startHttpRoutes();
 

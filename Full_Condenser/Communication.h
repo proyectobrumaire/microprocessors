@@ -43,7 +43,9 @@ public:
     CMD_TAKE_PHOTO = 0x01,
     CMD_SAVE_EVENT = 0x02,
     CMD_SAVE_DATA = 0x03,
-    CMD_HELLO = 0x04
+    CMD_HELLO = 0x04,
+    CMD_LOCKARDUINO   = 0x05,
+    CMD_UNLOCKARDUINO = 0x06
   };
 
 
@@ -74,6 +76,7 @@ public:
   void clearRtcTimerFlags();
   void recieve_commands();
   void sendSensorPulse();
+  void safety_lock_timeout();
 
   uint32_t duracion;
   volatile uint32_t lastSensorFlagRaisen = 0;
@@ -84,6 +87,10 @@ private:
 
   const uint32_t min_sensor_duration = 50; // 0 cm
   const uint32_t max_sensor_duration = 2500; // 40 cm
+
+  volatile bool esp_busy = false; //Flag por si el esp32 entra en estado de espera
+  uint32_t esp_busy_since = 0; //para el timeout
+  uint32_t ESP_BUSY_TIMEOUT = 60000; //1 minuto de busy como max
 
   
 
