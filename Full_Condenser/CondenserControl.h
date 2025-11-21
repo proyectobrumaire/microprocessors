@@ -27,9 +27,11 @@ class CondenserControl {
             uint8_t cSP1, cSP2, cSP3;
             //Balanza
             uint8_t dout, clk;
+            //sensor de corrinete
+            uint8_t otrosensor;
         };
 
-        static const size_t N_DATA_CRL = 16;
+        static const size_t N_DATA_CRL = 17;
 
         explicit CondenserControl(const Pins& p); //constructor
         void iniciar_control();
@@ -98,6 +100,7 @@ class CondenserControl {
 
         float peso_agua;
 
+        float voltajeCorrienteFiltrada;
         //Acumuladores
         float   T1_sum = 0.0; //tempAmbiente2
         float   T2_sum = 0.0; //tempAmbiente1
@@ -115,6 +118,7 @@ class CondenserControl {
         float   I1_sum = 0.0;
         float   I2_sum = 0.0;
         float   I3_sum = 0.0;
+        float   I4_sum = 0.0;
         float   W1_sum = 0.0;
         int num_samples = 0;
         

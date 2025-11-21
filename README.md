@@ -1,4 +1,4 @@
-#Para instalar la board del esp32 CAM en el IDE de Arduiino:
+# Para instalar la board del esp32 CAM en el IDE de Arduino:
 https://circuitdigest.com/microcontroller-projects/how-to-program-esp32-cam-using-arduino
 
 # Interacción con el ESP32 mediante `curl`

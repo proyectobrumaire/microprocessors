@@ -147,6 +147,13 @@ void CondenserControl::leer_sensores_y_controlar(){
       peso_agua = balanza.get_units(20);
     }
 
+    float suma = 0;
+    for (int i = 0; i < 10; i++) {
+      suma += analogRead(pins.otrosensor);
+      delay(2);
+    }
+    float voltaje = (suma / 10.0) * (5.0 / 1023.0);
+    voltajeCorrienteFiltrada = (voltaje - 2.5) / 0.100;  // Sensibilidad para 20A
 
     //Esto no se puede interumpir...
     noInterrupts();
@@ -166,6 +173,7 @@ void CondenserControl::leer_sensores_y_controlar(){
     I1_sum += current_mA1;
     I2_sum += current_mA2;
     I3_sum += current_mA3;
+    I4_sum += voltajeCorrienteFiltrada;
     W1_sum += peso_agua;
     num_samples++;
     interrupts();
@@ -185,6 +193,7 @@ void CondenserControl::leer_sensores_y_controlar(){
     Serial.print("Correinte 1: "); Serial.println(current_mA1);
     Serial.print("Correinte 2: "); Serial.println(current_mA2);
     Serial.print("Correinte 3: "); Serial.println(current_mA3);
+    Serial.print("Correinte 4: "); Serial.println(voltajeCorrienteFiltrada);
     Serial.print("Peso : "); Serial.println(peso_agua);
     Serial.println("-----------");
 }
@@ -193,7 +202,7 @@ void CondenserControl::leer_sensores_y_controlar(){
 void CondenserControl::reset_acumuladores() {
   T1_sum = T2_sum = T3_sum = T4_sum = T5_sum = T6_sum = 0.0f;
   H1_sum = H2_sum = E1_sum = E2_sum = P1_sum = P2_sum = 0.0f;
-  I1_sum = I2_sum = I3_sum = 0.0f;
+  I1_sum = I2_sum = I3_sum = I4_sum = 0.0f;
   W1_sum = 0.0f;
   num_samples = 0;
 }
@@ -216,7 +225,8 @@ void CondenserControl::promediar(float out[N_DATA_CRL]) {
   out[12] = safe_avg(I1_sum, num_samples);
   out[13] = safe_avg(I2_sum, num_samples);
   out[14] = safe_avg(I3_sum, num_samples);
-  out[15] = safe_avg(W1_sum, num_samples);
+  out[15] = safe_avg(I4_sum, num_samples);
+  out[16] = safe_avg(W1_sum, num_samples);
   reset_acumuladores();  // ← limpia promedios para la siguiente ventana
 }
 

@@ -6,7 +6,7 @@
 #include "dual_server.h"
 
 
-static const size_t N_DATA = 16;
+static const size_t N_DATA = 17;
 
 //Códigos de la sensores y variables a guardar:
 enum KeyCode : uint8_t {
@@ -25,7 +25,8 @@ enum KeyCode : uint8_t {
   I1_K = 0x2C,   //Corriente uno
   I2_K = 0x2D,   //Corriente dos
   I3_K = 0x2E,   //Corriente tres
-  W1_K = 0x2F    //Peso del agua
+  I4_K = 0x2F,   //Corriente filtrada
+  W1_K = 0x30    //Peso del agua
 };
 
 //Códigos de la trama:
@@ -63,6 +64,7 @@ const char* keyLabel(uint8_t key) {
     case I1_K: return "Corriente de Panel";   //Corriente uno
     case I2_K: return "Corriente de Turbina";   //Corriente dos
     case I3_K: return "Corriente de Bateria";   //Corriente tres
+    case I4_K: return "Corriente filtrada";   //Corriente cuatro
     case W1_K: return "Peso del agua";   //Corriente tres
     default:   return "Key desconocida";
   }

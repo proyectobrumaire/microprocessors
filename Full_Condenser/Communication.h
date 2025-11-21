@@ -16,7 +16,7 @@ public:
     byte sensor_interrupt, timer_interrupt, trig;
   };
 
-  static const size_t N_DATA = 16;
+  static const size_t N_DATA = 17;
 
   //Códigos de la sensores y variables a guardar:
   enum KeyCode : uint8_t {

@@ -3,7 +3,7 @@
 #include "Communication.h"
 #include "CondenserControl.h"
 
-const int N_Sensores = 16;
+const int N_Sensores = 17;
 
 
 /*=========TIEMPOS=========*/
