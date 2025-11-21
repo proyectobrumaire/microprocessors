@@ -1,3 +1,6 @@
+#Para instalar la board del esp32 CAM en el IDE de Arduiino:
+https://circuitdigest.com/microcontroller-projects/how-to-program-esp32-cam-using-arduino
+
 # Interacción con el ESP32 mediante `curl`
 
 Este documento reúne los comandos `curl` más comunes para consultar el estado del ESP32, cambiar la red cliente, gestionar archivos en la SD y descargar logs o imágenes.

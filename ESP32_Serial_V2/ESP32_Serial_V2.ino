@@ -32,7 +32,9 @@ enum KeyCode : uint8_t {
 enum Command : uint8_t {
   CMD_TAKE_PHOTO    = 0x01,
   CMD_SAVE_EVENT    = 0x02,
-  CMD_SAVE_DATA     = 0x03
+  CMD_SAVE_DATA     = 0x03,
+  CMD_LOCKARDUINO   = 0x05,
+  CMD_UNLOCKARDUINO = 0x06
 };
 
 
@@ -97,16 +99,8 @@ void setup()
 void loop()
 {
 
-  // watchdog de sd_busy
-  if (sd_busy) {
-    uint32_t elapsed = millis() - sd_busy_since;
-    if (elapsed > SD_BUSY_MAX_TIME) {
-      Serial.println("WARN: sd_busy lleva demasiado tiempo, liberando a la fuerza");
-      sd_busy = false;
-    }
-  }
 
-  if(!sd_busy && linkReciever.available()) //Solo atiende serial si la sd está libre
+  if(linkReciever.available()) //Solo atiende serial si la sd está libre
   {
     //índice: Donde va la lecutra
     uint16_t idxx = 0;
@@ -196,6 +190,7 @@ void loop()
     }
 
   }
+  delay(50); //Para que le de el tiempo
   server.handleClient();
 }
 
@@ -227,4 +222,28 @@ void saveToSD(const String &data) {
   if (!file) { Serial.println("No pude crear/abrir log.txt"); return; }
   file.println(data);
   file.close();
+}
+
+void send_lock_arduino(){
+  uint16_t ts_dummy[6] = {0,0,0,0,0,0}; //timestamp feka
+  uint16_t len;
+  uint8_t cmd = CMD_LOCKARDUINO;
+
+  len = 0;
+  len = linkReciever.txObj(ts_dummy,  len, 6 * sizeof(uint16_t));
+  len = linkReciever.txObj(cmd, len);  
+  linkReciever.sendData(len); //Enviar el evento
+}
+
+
+
+void send_unlock_arduino(){
+  uint16_t ts_dummy[6] = {0,0,0,0,0,0}; //timestamp feka
+  uint16_t len;
+  uint8_t cmd = CMD_UNLOCKARDUINO;
+
+  len = 0;
+  len = linkReciever.txObj(ts_dummy,  len, 6 * sizeof(uint16_t));
+  len = linkReciever.txObj(cmd, len);  
+  linkReciever.sendData(len); //Enviar el evento
 }
