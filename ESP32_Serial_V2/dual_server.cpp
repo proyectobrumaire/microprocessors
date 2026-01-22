@@ -8,7 +8,7 @@ String default_SSID_sta = "univalle";
 String default_password_sta = "Univalle";
 bool SD_present = false;
 
-
+  
 // AP Mode Credentials
 static const char* ap_ssid = "ESP32_AP";
 static const char* ap_password = "12345678";
@@ -448,6 +448,8 @@ bool initializeConfig(){
   reconnectSTA();
   return true;
 }
+
+
 
 
 
