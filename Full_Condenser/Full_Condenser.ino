@@ -1,4 +1,4 @@
-#include <stdio.h>
+  #include <stdio.h>
 
 #include "Communication.h"
 #include "CondenserControl.h"
@@ -57,7 +57,7 @@ void setup(void) {
   Serial.println("Sistema listo.");
 
   ctrl.leer_sensores_y_controlar();
-  ctrl.promediar(sensores_promedio); //Primera lectura
+    ctrl.promediar(sensores_promedio); //Primera lectura
   com.report_boot(sensores_promedio); //Repotar el boot
 }
 

@@ -95,88 +95,92 @@ void CondenserControl::leer_sensores_y_controlar(){
     tempObjetivo = salidaPI + c12;
 
     pwm = (tempObjetivo - 28.0) / -0.0745;
-    pwm = constrain(pwm, 0, 255);
-    analogWrite(pins.rpwm, (int)pwm); //Ejecutar el control
-    }
+    //pwm = constrain(pwm, 0, 255);
+    //pwm = 255;
+    //analogWrite(pins.rpwm, (int)pwm); //Ejecutar el control
+  }
 
-    //Lecturas del sensor de corriente
-    float averageRawReading1 = (float)analogRead(pins.cSP1);
-    float voltage1 = averageRawReading1 * (5.0 / 1023.0);
-    float Vshunt1 = voltage1 / opAmpGain1;
-    float currentAmps1 = Vshunt1 / Rshunt1;
-    current_mA1 = currentAmps1 * 1000.0;
+  pwm = 255;
+  analogWrite(pins.rpwm, (int)pwm); //Ejecutar el control
+
+  //Lecturas del sensor de corriente
+  float averageRawReading1 = (float)analogRead(pins.cSP1);
+  float voltage1 = averageRawReading1 * (5.0 / 1023.0);
+  float Vshunt1 = voltage1 / opAmpGain1;
+  float currentAmps1 = Vshunt1 / Rshunt1;
+  current_mA1 = currentAmps1 * 1000.0;
 
 
-    float averageRawReading2 = (float)analogRead(pins.cSP2);;
-    float voltage2 = averageRawReading2 * (5.0 / 1023.0);
-    float Vshunt2 = voltage2 / opAmpGain2;
-    float currentAmps2 = Vshunt2 / Rshunt2;
-    current_mA2 = currentAmps2 * 1000.0;
+  float averageRawReading2 = (float)analogRead(pins.cSP2);;
+  float voltage2 = averageRawReading2 * (5.0 / 1023.0);
+  float Vshunt2 = voltage2 / opAmpGain2;
+  float currentAmps2 = Vshunt2 / Rshunt2;
+  current_mA2 = currentAmps2 * 1000.0;
 
-    float averageRawReading3 = (float)analogRead(pins.cSP3);
-    float voltage3 = averageRawReading3 * (5.0 / 1023.0);
-    float Vshunt3 = voltage3 / opAmpGain3;
-    float currentAmps3 = Vshunt3 / Rshunt3;
-    current_mA3 = currentAmps3 * 1000.0;
+  float averageRawReading3 = (float)analogRead(pins.cSP3);
+  float voltage3 = averageRawReading3 * (5.0 / 1023.0);
+  float Vshunt3 = voltage3 / opAmpGain3;
+  float currentAmps3 = Vshunt3 / Rshunt3;
+  current_mA3 = currentAmps3 * 1000.0;
 
-    if (current_mA1 < MIN_CURRENT_THRESHOLD_mA) {current_mA1 = 0.0f;}
-    if (current_mA2 < MIN_CURRENT_THRESHOLD_mA) {current_mA2 = 0.0f;}
-    if (current_mA3 < MIN_CURRENT_THRESHOLD_mA) {current_mA3 = 0.0f;}
+  if (current_mA1 < MIN_CURRENT_THRESHOLD_mA) {current_mA1 = 0.0f;}
+  if (current_mA2 < MIN_CURRENT_THRESHOLD_mA) {current_mA2 = 0.0f;}
+  if (current_mA3 < MIN_CURRENT_THRESHOLD_mA) {current_mA3 = 0.0f;}
 
-    //Aquí se debe modificar peso_agua. Evitar método bloqueante
-    if (is_balanza) {
-      peso_agua = balanza.get_units(20);
-    }
+  //Aquí se debe modificar peso_agua. Evitar método bloqueante
+  if (is_balanza) {
+    peso_agua = balanza.get_units(20);
+  }
 
-    float suma = 0;
-    for (int i = 0; i < 10; i++) {
-      suma += analogRead(pins.otrosensor);
-      delay(2);
-    }
-    float voltaje = (suma / 10.0) * (5.0 / 1023.0);
-    voltajeCorrienteFiltrada = (voltaje - 2.5) / 0.100;  // Sensibilidad para 20A
+  float suma = 0;
+  for (int i = 0; i < 10; i++) {
+    suma += analogRead(pins.otrosensor);
+    delay(2);
+  }
+  float voltaje = (suma / 10.0) * (5.0 / 1023.0);
+  voltajeCorrienteFiltrada = (voltaje - 2.5) / 0.100;  // Sensibilidad para 20A
 
-    //Esto no se puede interumpir...
-    noInterrupts();
-    //acumular...
-    T1_sum += tempAmbiente2;
-    T2_sum += tempAmbiente1;
-    T3_sum += c1;
-    T4_sum += c2;
-    T5_sum += c12;
-    T6_sum += tempObjetivo;
-    H1_sum += humedad2;    
-    H2_sum += humedad1;
-    E1_sum += error;
-    E2_sum += errorAcumulado;
-    P1_sum += puntoRocio;
-    P2_sum += pwm;
-    I1_sum += current_mA1;
-    I2_sum += current_mA2;
-    I3_sum += current_mA3;
-    I4_sum += voltajeCorrienteFiltrada;
-    W1_sum += peso_agua;
-    num_samples++;
-    interrupts();
+  //Esto no se puede interumpir...
+  noInterrupts();
+  //acumular...
+  T1_sum += tempAmbiente2;
+  T2_sum += tempAmbiente1;
+  T3_sum += c1;
+  T4_sum += c2;
+  T5_sum += c12;
+  T6_sum += tempObjetivo;
+  H1_sum += humedad2;    
+  H2_sum += humedad1;
+  E1_sum += error;
+  E2_sum += errorAcumulado;
+  P1_sum += puntoRocio;
+  P2_sum += pwm;
+  I1_sum += current_mA1;
+  I2_sum += current_mA2;
+  I3_sum += current_mA3;
+  I4_sum += voltajeCorrienteFiltrada;
+  W1_sum += peso_agua;
+  num_samples++;
+  interrupts();
 
-    Serial.print("Temp Ambiente: "); Serial.println(tempAmbiente2);
-    Serial.print("Humedad: "); Serial.println(humedad2);
-    Serial.print("Temp Caja Interna: "); Serial.println(tempAmbiente1);
-    Serial.print("Humedad Interna: "); Serial.println(humedad1);
-    Serial.print("Temp Placa Fria 1: "); Serial.println(c1);
-    Serial.print("Temp Placa Fria 2: "); Serial.println(c2);
-    Serial.print("Temp Media Fria: "); Serial.println(c12);
-    Serial.print("Punto Rocío: "); Serial.println(puntoRocio);
-    Serial.print("Error: "); Serial.println(error);
-    Serial.print("Error Acumulado: "); Serial.println(errorAcumulado);
-    Serial.print("Temp Objetivo: "); Serial.println(tempObjetivo);
-    Serial.print("PWM aplicado: "); Serial.println(pwm);
-    Serial.print("Correinte 1: "); Serial.println(current_mA1);
-    Serial.print("Correinte 2: "); Serial.println(current_mA2);
-    Serial.print("Correinte 3: "); Serial.println(current_mA3);
-    Serial.print("Correinte 4: "); Serial.println(voltajeCorrienteFiltrada);
-    Serial.print("Peso : "); Serial.println(peso_agua);
-    Serial.println("-----------");
+  Serial.print("Temp Ambiente: "); Serial.println(tempAmbiente2);
+  Serial.print("Humedad: "); Serial.println(humedad2);
+  Serial.print("Temp Caja Interna: "); Serial.println(tempAmbiente1);
+  Serial.print("Humedad Interna: "); Serial.println(humedad1);
+  Serial.print("Temp Placa Fria 1: "); Serial.println(c1);
+  Serial.print("Temp Placa Fria 2: "); Serial.println(c2);
+  Serial.print("Temp Media Fria: "); Serial.println(c12);
+  Serial.print("Punto Rocío: "); Serial.println(puntoRocio);
+  Serial.print("Error: "); Serial.println(error);
+  Serial.print("Error Acumulado: "); Serial.println(errorAcumulado);
+  Serial.print("Temp Objetivo: "); Serial.println(tempObjetivo);
+  Serial.print("PWM aplicado: "); Serial.println(pwm);
+  Serial.print("Correinte 1: "); Serial.println(current_mA1);
+  Serial.print("Correinte 2: "); Serial.println(current_mA2);
+  Serial.print("Correinte 3: "); Serial.println(current_mA3);
+  Serial.print("Correinte 4: "); Serial.println(voltajeCorrienteFiltrada);
+  Serial.print("Peso : "); Serial.println(peso_agua);
+  Serial.println("-----------");
 }
 
 
