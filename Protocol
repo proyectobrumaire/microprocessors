@@ -1,25 +1,47 @@
-//Estrcutrua general
-[TIMESTAMP]	[CMD]	[PAYLOAD] (Si lo hay. El Payload es de longitud variable)
-6 BYTES 	1 BYTE	X BYTES
+// ============================================================
+// PROTOCOLO SERIAL — Arduino ↔ ESP32  (SerialTransfer, 115200 baud)
+// ============================================================
 
-//Para tomar una foto (ESP32 Side)
+// --- Estructura general ---
+// [TIMESTAMP (6 bytes)] [CMD (1 byte)] [PAYLOAD (variable)]
+//
+//   TIMESTAMP: YY, MM, DD, HH, MM, SS  (6 × uint8)
+//   CMD:       código de comando (ver tabla CMD)
+//   PAYLOAD:   depende del comando
+
+
+// --- Comandos ---
+
+// Tomar foto (Arduino → ESP32)
 [TIMESTAMP][CMD_TAKE_PHOTO]
 
-//Para regisrar un evento (ESP32 Side)
-[TIMESTAMP][CMD_SAVE_EVENT][EVENTCODE (1 BYTE)] 
+// Registrar evento en SD (Arduino → ESP32)
+[TIMESTAMP][CMD_SAVE_EVENT][EVENTCODE (1 byte)]
 
-//Para guardar un dato en la SD (ESP32 Side)
-[TIMESTAMP][CMD_SAVE_DATA][[SENSOR_KEY(1 BYTE)][VALUE (4 BYTES)]]
+// Guardar dato de sensor en SD (Arduino → ESP32)
+[TIMESTAMP][CMD_SAVE_DATA][SENSOR_KEY (1 byte)][VALUE (4 bytes, float)]
 
-//Para hacer ACK de un comando
-[TIMESTAMP][CMD][OK (1 BYTE; TRUE ES OK)]
+// ACK de cualquier comando (ESP32 → Arduino)
+[TIMESTAMP][CMD][OK (1 byte; 1 = OK)]
+
+// Hello / sincronización de hora (ambos lados)
+[TIMESTAMP][CMD_HELLO][HELLO_MODE (1 byte)]
 
 
-//Para Hello ?  (Both Sides)
-[TIMESTAMP][CMD_HELLO][SET_TIME]
+// --- Tabla de códigos ---
 
+CMD:
+  CMD_TAKE_PHOTO    = 0x01
+  CMD_SAVE_EVENT    = 0x02
+  CMD_SAVE_DATA     = 0x03
+  CMD_HELLO         = 0x04
+  CMD_LOCKARDUINO   = 0x05
+  CMD_UNLOCKARDUINO = 0x06
 
-Códigos de la sensores y variables a guardar:
+EVENTCODE:
+  BOOT              = 0x80
+  BIRD              = 0x81
+  PERIODIC          = 0x82
 
 SENSOR_KEY:
   T1_K = 0x20  // Temp ambiente
@@ -34,57 +56,45 @@ SENSOR_KEY:
   E2_K = 0x29  // Error acumulado
   P1_K = 0x2A  // Punto de rocío
   P2_K = 0x2B  // PWM aplicado
-  I1_K = 0x2C  //Corriente uno
-  I2_K = 0x2D  //Corriente dos
-  I3_K = 0x2E  //Corriente tres
-  W1_K = 0x2F   //Peso del agua
-
-CMD:
-  CMD_TAKE_PHOTO    = 0x01
-  CMD_SAVE_EVENT    = 0x02
-  CMD_SAVE_DATA     = 0x03
-  CMD_HELLO         = 0x04
-
-EVENTCODE:
-  BOOT        = 0x80
-  BIRD        = 0x81
-  PERIODIC    = 0x82
+  I1_K = 0x2C  // Corriente uno
+  I2_K = 0x2D  // Corriente dos
+  I3_K = 0x2E  // Corriente tres
+  W1_K = 0x2F  // Peso del agua
 
 HELLO_MODES:
-  SET_TIME        = 0xA0
-  STATUS        = 0xA1
+  SET_TIME          = 0xA0   // Arduino → ESP32: empuja hora actual
+  STATUS            = 0xA1   // Consulta de estado
 
 
-//El arduino pushea la hora hacia ESP32 cada que hay una intereupción de reloj. (SET)
+// --- Notas ---
+// El Arduino empuja la hora hacia el ESP32 cada interrupción de reloj (SET_TIME).
+// El ESP32 envía SET_TIME al Arduino cuando recibe hora desde un endpoint HTTP.
 
-//El ESP32 envía un SET con la hora hacia el arduino-->RTC cada que recibe la hora de un endpoint.
 
+// ============================================================
+// HTTP API — ESP32 (puerto 80)
+// ============================================================
 
-//Para mirar si el ESP32 está conectado como cliente
+// Verificar conectividad (modo STA: esp32cam.local / modo AP: 192.168.4.1)
 curl http://192.168.4.1/
 
-//Para cambiar la red cliente del ESP32 (Ej: Univalle)
+// Cambiar red WiFi del ESP32
 curl -X POST "http://192.168.4.1/wifi" \
--H "Content-Type: application/json" \
--u admin:admin \
+  -H "Content-Type: application/json" \
+  -u admin:admin \
   -d '{
     "ssid": "Familia Orozco2",
     "password": "jazz9954"
   }'
-  
-//Para listar los archivos de la sd: OJO -> método pesado
+
+// Listar archivos de la SD
 curl http://192.168.4.1/files
 
-//Para descargar archivo log. Query Param file
-curl -o log.txt http://192.168.4.1/download?file=log.txt
+// Descargar log
+curl -o log.txt "http://192.168.4.1/download?file=log.txt"
 
-//Ej para descargar cualquier foto. Query Param file
-curl -o uwu.jpg http://192.168.4.1:80/download?file=image_2025-11-17T23-26-20_3.jpg
+// Descargar foto
+curl -o uwu.jpg "http://192.168.4.1:80/download?file=image_2025-11-17T23-26-20_3.jpg"
 
-
-curl -X  DELETE "http://192.168.4.1:80/files?file=image_2025-11-17T23-26-20_3.jpg"
-
-
-
- 
- 	
+// Eliminar archivo
+curl -X DELETE "http://192.168.4.1:80/files?file=image_2025-11-17T23-26-20_3.jpg"

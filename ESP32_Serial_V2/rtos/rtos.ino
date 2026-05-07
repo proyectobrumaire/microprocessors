@@ -464,7 +464,7 @@ void startServer() {
 
         httpd_uri_t list_files_uri = { .uri="/list", .method=HTTP_GET, .handler=list_files_sd_handler };
         httpd_register_uri_handler(server, &list_files_uri);
-z
+
         httpd_uri_t download_file_uri = { .uri="/download", .method=HTTP_GET, .handler=download_file_handler };
         httpd_register_uri_handler(server, &download_file_uri);
 

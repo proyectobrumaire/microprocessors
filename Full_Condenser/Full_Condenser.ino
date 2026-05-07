@@ -23,20 +23,27 @@ CondenserCom::Pins pinsCom{18, 19, 12}; //sensor_interrupt, timer_interrupt, tri
 
 CondenserControl::Pins ctrlCom{
   // DHT (dht_pin1, dht_pin2)
-  30, 31,
+  36, 37,
   // MAX31855  (max_d01, max_cs1, max_clk1, max_d02, max_cs2, max_clk2);
-  22, 23, 24, 25, 26, 27,
+  24, 23, 22, 27, 26, 25,
   // L298N (in1,in2,ena,in3,in4,enb)
-  2, 3, 4, 5, 6, 7,
+  30, 31, 2, 28, 29, 3,
   // IBT-2 (rpwm,lpwm,ren,len)
-  10, 9, 11, 8, 
+  5, 4, 39, 33, 
   //Sensor de corriente (cSP1, cSP2, cSP3);
-  A3, A4, A5,
+  A15, A14, A13,
   //Balanza (dout, clk)
   A1, A0,
-  //Sensor Mario
-  A2
+  //Sensor  ACS712
+  A3
 };
+
+//M1 -> 10
+//M2 -> 11
+//ServoValve -> 13
+//Leds -> 
+//Rain A0 ->
+//Rain D0 ->
 
 //Instanciar las clases
 CondenserCom com(pinsCom);

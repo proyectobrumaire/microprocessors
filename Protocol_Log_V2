@@ -1,0 +1,116 @@
+// ============================================================
+// PROTOCOLO DE LOG — V2
+// Extiende el formato original agregando identidad y orden
+// garantizados independientemente del timestamp del RTC.
+// ============================================================
+
+
+// --- Motivación ---
+//
+// El formato V1 dependía exclusivamente del timestamp para identificar
+// y ordenar líneas. Si el RTC está corrupto, el orden se pierde.
+// V2 agrega dos contadores persistentes (epoch, seq) que garantizan
+// identidad y orden en cualquier condición.
+
+
+// ============================================================
+// CONTADORES EN NVS (ESP32)
+// ============================================================
+
+// Clave        Tipo     Descripción
+// log_epoch    uint16   Sube 1 cada vez que log.txt es borrado deliberadamente
+// log_seq      uint32   Sube 1 con cada línea escrita. Resetea junto con log_epoch
+
+// Ambos sobreviven reinicios normales (corte de luz, watchdog, ESP.restart()).
+// Solo se pierden si el NVS es borrado explícitamente (reflash con erase all).
+// Con log_seq como uint32 (máx ~4.2 mil millones) y un log cada 30 s,
+// el contador dura ~4.000 años sin desbordarse.
+
+
+// ============================================================
+// FORMATO DE LÍNEA
+// ============================================================
+
+// Evento:
+// YY-MM-DDTHH-MM-SS, <epoch>, <seq>, <EVENT_NAME>, -,    0
+
+// Dato de sensor:
+// YY-MM-DDTHH-MM-SS, <epoch>, <seq>, -,             <SENSOR_KEY>, <value>
+
+// Ejemplos:
+// 26-05-07T08-00-00, 0,  0,   BOOT, -,    0
+// 26-05-07T08-00-05, 0,  1,   -,    T1_K, 24.500
+// 26-05-07T08-00-05, 0,  2,   -,    H1_K, 68.000
+// 26-05-07T08-30-00, 0,  3,   BIRD, -,    0
+// 26-05-07T10-00-00, 0,  140, BOOT, -,    0    ← reinicio, epoch sin cambio
+// 26-05-07T10-00-10, 0,  141, -,    T1_K, 25.100
+
+
+// ============================================================
+// SESIONES
+// ============================================================
+
+// Una sesión es el conjunto de líneas entre dos BOOT events consecutivos.
+// El BOOT siempre es la primera línea de cada sesión (seq más bajo).
+//
+// Orden entre sesiones:  garantizado por (epoch, seq) del BOOT que las abre.
+// Orden dentro de sesión: garantizado por seq.
+//
+// Esto permite reconstruir el orden total aunque todos los timestamps
+// estén corruptos.
+
+
+// ============================================================
+// VALIDEZ DEL TIMESTAMP
+// ============================================================
+
+// La validez se evalúa a nivel de sesión completa, no línea por línea.
+// Dado que el RTC es una fuente única, si falla, falla para toda la sesión.
+//
+// Regla: una sesión es VÁLIDA si el timestamp de su BOOT event es
+// estrictamente mayor al timestamp del último BOOT válido conocido.
+// Si retrocede o es inválido (ej: 00-00-00T00-00-00) → sesión INCIERTA.
+//
+// Ejemplo:
+//   Sesión 1  BOOT ts=26-05-07T08-00-00  ✓  baseline
+//   Sesión 2  BOOT ts=26-05-07T10-30-00  ✓  avanza → válida
+//   Sesión 3  BOOT ts=00-00-00T00-00-00  ✗  retrocede → incierta
+//   Sesión 4  BOOT ts=26-05-07T11-00-00  ✗  retrocede respecto a sesión 2 → incierta
+//   Sesión 5  BOOT ts=26-05-09T07-15-00  ✓  avanza respecto a sesión 2 → válida
+//
+// Las sesiones inciertas conservan sus datos. Su rango temporal puede acotarse
+// entre el fin de la última sesión válida y el inicio de la siguiente sesión válida.
+// No se descartan; se muestran con indicador de incertidumbre en el análisis.
+
+
+// ============================================================
+// BORRADO DEL LOG Y CAMBIO DE EPOCH
+// ============================================================
+
+// El cambio de epoch ocurre únicamente cuando log.txt es borrado deliberadamente.
+// Es la única forma de resetear seq a 0 sin colisión de identidad.
+//
+// Flujo de sync con borrado:
+//   1. App descarga log.txt y sube todas las entradas nuevas al backend.
+//   2. App envía comando al ESP32 para borrar log.txt.
+//   3. ESP32: incrementa log_epoch, resetea log_seq a 0, borra log.txt.
+//   4. Próximo BOOT: (epoch=N+1, seq=0) — sin colisión con entradas anteriores.
+//
+// Nota: el borrado es opcional. Si no se borra, last_synced_lines en la app
+// evita duplicar entradas en syncs posteriores.
+
+
+// ============================================================
+// SINCRONIZACIÓN DEL RTC VÍA HTTP
+// ============================================================
+
+// Usa el comando serial existente CMD_HELLO con modo SET_TIME (0xA0).
+//
+// Flujo:
+//   1. App hace sync → envía hora actual al ESP32 via HTTP.
+//   2. ESP32 recibe la hora → reenvía CMD_HELLO + SET_TIME + timestamp al Arduino.
+//   3. Arduino corrige el RTC.
+//   4. El siguiente BOOT event ya tiene timestamp válido.
+//
+// Tras la corrección, la primera sesión con BOOT que avance en el tiempo
+// recupera automáticamente la confianza del timestamp.
