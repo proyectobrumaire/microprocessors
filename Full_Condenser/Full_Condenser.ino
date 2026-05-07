@@ -29,7 +29,7 @@ CondenserControl::Pins ctrlCom{
   // L298N (in1,in2,ena,in3,in4,enb)
   2, 3, 4, 5, 6, 7,
   // IBT-2 (rpwm,lpwm,ren,len)
-  8, 9, 10, 11, 
+  10, 9, 11, 8, 
   //Sensor de corriente (cSP1, cSP2, cSP3);
   A3, A4, A5,
   //Balanza (dout, clk)
