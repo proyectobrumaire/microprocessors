@@ -25,6 +25,9 @@
 #define STACK_CAMERA 8192
 #define STACK_SD     8192
 #define STACK_HTTP   8192
+#define STACK_SYNC   2048
+
+#define SYNC_COUNTERS_INTERVAL_MS (5 * 60 * 1000)
 
 // Pin definition for CAMERA_MODEL_AI_THINKER
 #define PWDN_GPIO_NUM 32
@@ -70,9 +73,12 @@ enum Command : uint8_t {
   CMD_TAKE_PHOTO    = 0x01,
   CMD_SAVE_EVENT    = 0x02,
   CMD_SAVE_DATA     = 0x03,
+  CMD_HELLO         = 0x04,
   CMD_LOCKARDUINO   = 0x05,
   CMD_UNLOCKARDUINO = 0x06
 };
+
+#define CMD_HELLO_SET_TIME 0xA0
 
 // Códigos de los eventos
 enum EventCode : uint8_t {
@@ -124,6 +130,7 @@ typedef struct {
 
 SerialTransfer linkReciever;
 Preferences prefs;
+Preferences logPrefs;
 
 QueueHandle_t cameraQueue = 0;
 QueueHandle_t sdQueue = 0;
@@ -131,6 +138,12 @@ SemaphoreHandle_t SDMutex = 0;
 
 httpd_handle_t server = NULL;
 bool is_sta_mode = false;
+
+uint32_t     log_seq        = 0;
+uint16_t     log_epoch      = 0;
+volatile bool pendingSetTime = false;
+uint16_t     pendingTs[6]   = {0};
+portMUX_TYPE timeMux        = portMUX_INITIALIZER_UNLOCKED;
 
 const char *tag = "Main";
 
@@ -141,6 +154,11 @@ void vTaskSerial ( void *pvParameters );
 void vTaskCamera ( void *pvParameters );
 void vTaskSDCard ( void *pvParameters );
 void configESPCamera(); //Configurar ESP32 Cam
+void loadLogCounters();
+void saveLogCounters();
+void vTaskSyncCounters(void *pvParameters);
+esp_err_t reset_log_handler(httpd_req_t *req);
+esp_err_t set_time_handler(httpd_req_t *req);
 
 void setup() {
   // Inicialización manual de la NVS
@@ -150,6 +168,7 @@ void setup() {
       err = nvs_flash_init();
   }
   ESP_ERROR_CHECK(err);
+  loadLogCounters();
   Serial.begin(115200);
   linkReciever.begin(Serial);
   initMicroSDCard();
@@ -196,7 +215,9 @@ void configESPCamera() {
   config.ledc_channel = LEDC_CHANNEL_0;
   config.ledc_timer = LEDC_TIMER_0;
   config.pin_d0 = Y2_GPIO_NUM;
-  config.pin_d1 = Y3_GPIO_NUM;
+  config.pin_d1 = Y3_GPIO_NUM
+  
+  ;
   config.pin_d2 = Y4_GPIO_NUM;
   config.pin_d3 = Y5_GPIO_NUM;
   config.pin_d4 = Y6_GPIO_NUM;
@@ -289,6 +310,24 @@ void loadCredentials(String &s, String &p) {
     s = prefs.getString("ssid", "default_ssid");
     p = prefs.getString("pass", "default_pass");
     prefs.end();
+}
+void loadLogCounters() {
+    logPrefs.begin("log_conf", true);
+    log_epoch = logPrefs.getUShort("log_epoch", 0);
+    log_seq   = logPrefs.getUInt("log_seq", 0);
+    logPrefs.end();
+}
+void saveLogCounters() {
+    logPrefs.begin("log_conf", false);
+    logPrefs.putUShort("log_epoch", log_epoch);
+    logPrefs.putUInt("log_seq", log_seq);
+    logPrefs.end();
+}
+void vTaskSyncCounters(void *pvParameters) {
+  while (1) {
+    vTaskDelay(pdMS_TO_TICKS(SYNC_COUNTERS_INTERVAL_MS));
+    saveLogCounters();
+  }
 }
 esp_err_t wifi_setup_handler(httpd_req_t *req) {
   if (req->content_len >= 128) {
@@ -454,6 +493,47 @@ esp_err_t delete_file_handler(httpd_req_t *req){
         return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to remove file");
     }
 }
+esp_err_t reset_log_handler(httpd_req_t *req) {
+    if (!is_sta_mode) {
+        return httpd_resp_send_err(req, HTTPD_403_FORBIDDEN, "Only STA mode allowed");
+    }
+    if (xSemaphoreTake(SDMutex, pdMS_TO_TICKS(2000)) != pdTRUE) {
+        return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "SD Busy");
+    }
+    if (SD_MMC.exists("/log.txt")) SD_MMC.remove("/log.txt");
+    xSemaphoreGive(SDMutex);
+    log_epoch++;
+    log_seq = 0;
+    saveLogCounters();
+    httpd_resp_sendstr(req, "{\"status\":\"ok\"}");
+    return ESP_OK;
+}
+esp_err_t set_time_handler(httpd_req_t *req) {
+    if (req->content_len == 0 || req->content_len >= 64) {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Bad length");
+        return ESP_FAIL;
+    }
+    char buf[64];
+    int ret = httpd_req_recv(req, buf, req->content_len);
+    if (ret <= 0) return ESP_FAIL;
+    buf[ret] = '\0';
+    JsonDocument doc;
+    if (deserializeJson(doc, buf)) {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "JSON invalido");
+        return ESP_FAIL;
+    }
+    JsonArray arr = doc["ts"].as<JsonArray>();
+    if (arr.size() != 6) {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "ts debe ser [YY,MM,DD,HH,MM,SS]");
+        return ESP_FAIL;
+    }
+    portENTER_CRITICAL(&timeMux);
+    for (int i = 0; i < 6; i++) pendingTs[i] = arr[i].as<uint16_t>();
+    pendingSetTime = true;
+    portEXIT_CRITICAL(&timeMux);
+    httpd_resp_sendstr(req, "{\"status\":\"ok\"}");
+    return ESP_OK;
+}
 void startServer() {
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
     config.server_port = 80;
@@ -470,6 +550,12 @@ void startServer() {
 
         httpd_uri_t delete_file_uri = { .uri="/delete", .method=HTTP_GET, .handler=delete_file_handler };
         httpd_register_uri_handler(server, &delete_file_uri);
+
+        httpd_uri_t reset_log_uri = { .uri="/reset_log", .method=HTTP_POST, .handler=reset_log_handler };
+        httpd_register_uri_handler(server, &reset_log_uri);
+
+        httpd_uri_t set_time_uri = { .uri="/set_time", .method=HTTP_POST, .handler=set_time_handler };
+        httpd_register_uri_handler(server, &set_time_uri);
     }
 }
 esp_err_t create_tasks(void){
@@ -507,13 +593,41 @@ esp_err_t create_tasks(void){
     3,
     &xHandle
   );
+
+  xTaskCreate(
+    vTaskSyncCounters,
+    "vTaskSyncCounters",
+    STACK_SYNC,
+    &ucParameterToPass,
+    1,
+    &xHandle
+  );
   return ESP_OK;
 }
 
 void vTaskSerial( void *pvParameters ){
   while(1)
   {
-    if(linkReciever.available()) 
+    {
+      portENTER_CRITICAL(&timeMux);
+      bool doSet = pendingSetTime;
+      uint16_t tsCopy[6];
+      if (doSet) {
+        memcpy(tsCopy, (const void*)pendingTs, sizeof(pendingTs));
+        pendingSetTime = false;
+      }
+      portEXIT_CRITICAL(&timeMux);
+      if (doSet) {
+        uint16_t len = 0;
+        uint8_t  cmd  = CMD_HELLO;
+        uint8_t  mode = CMD_HELLO_SET_TIME;
+        len = linkReciever.txObj(tsCopy, len, 6 * sizeof(uint16_t));
+        len = linkReciever.txObj(cmd,    len);
+        len = linkReciever.txObj(mode,   len);
+        linkReciever.sendData(len);
+      }
+    }
+    if(linkReciever.available())
     {
       //índice: Donde va la lecutra
       uint16_t idxx = 0;
@@ -563,11 +677,13 @@ void vTaskSerial( void *pvParameters ){
             default:        eveto_str = "INVALID_EV"; break;
           }
           snprintf(
-            msg, 
+            msg,
             sizeof(msg),
-            "%s,%s,-,0", 
-            ts_string, eveto_str
+            "%s,%u,%lu,%s,-,0",
+            ts_string, log_epoch, log_seq, eveto_str
           );
+          log_seq++;
+          if (log_seq % 10 == 0) saveLogCounters();
           event_to_sd.type = EVT_SAVE_LOG;
           strncpy(event_to_sd.msg, msg, sizeof(event_to_sd.msg));
           if ( !xQueueSend(sdQueue, &event_to_sd, pdMS_TO_TICKS(500)) ){
@@ -589,11 +705,13 @@ void vTaskSerial( void *pvParameters ){
           idxx = linkReciever.rxObj(sensor_value, idxx);
           const char* sensor_decoded = keyLabel(sensor);
           snprintf(
-            msg, 
+            msg,
             sizeof(msg),
-            "%s,-,%s,%.3f", 
-            ts_string, sensor_decoded, sensor_value
+            "%s,%u,%lu,-,%s,%.3f",
+            ts_string, log_epoch, log_seq, sensor_decoded, sensor_value
           );
+          log_seq++;
+          if (log_seq % 10 == 0) saveLogCounters();
           event_to_sd.type = EVT_SAVE_LOG;
           strncpy(event_to_sd.msg, msg, sizeof(event_to_sd.msg));
           if (xQueueSend(sdQueue, &event_to_sd, pdMS_TO_TICKS(500)) != pdPASS ){
