@@ -140,7 +140,6 @@ httpd_handle_t server = NULL;
 bool is_sta_mode = false;
 
 uint32_t     log_seq        = 0;
-uint16_t     log_epoch      = 0;
 volatile bool pendingSetTime = false;
 uint16_t     pendingTs[6]   = {0};
 portMUX_TYPE timeMux        = portMUX_INITIALIZER_UNLOCKED;
@@ -313,13 +312,11 @@ void loadCredentials(String &s, String &p) {
 }
 void loadLogCounters() {
     logPrefs.begin("log_conf", true);
-    log_epoch = logPrefs.getUShort("log_epoch", 0);
-    log_seq   = logPrefs.getUInt("log_seq", 0);
+    log_seq = logPrefs.getUInt("log_seq", 0);
     logPrefs.end();
 }
 void saveLogCounters() {
     logPrefs.begin("log_conf", false);
-    logPrefs.putUShort("log_epoch", log_epoch);
     logPrefs.putUInt("log_seq", log_seq);
     logPrefs.end();
 }
@@ -502,9 +499,6 @@ esp_err_t reset_log_handler(httpd_req_t *req) {
     }
     if (SD_MMC.exists("/log.txt")) SD_MMC.remove("/log.txt");
     xSemaphoreGive(SDMutex);
-    log_epoch++;
-    log_seq = 0;
-    saveLogCounters();
     httpd_resp_sendstr(req, "{\"status\":\"ok\"}");
     return ESP_OK;
 }
@@ -679,8 +673,8 @@ void vTaskSerial( void *pvParameters ){
           snprintf(
             msg,
             sizeof(msg),
-            "%s,%u,%lu,%s,-,0",
-            ts_string, log_epoch, log_seq, eveto_str
+            "%s,%lu,%s,-,0",
+            ts_string, log_seq, eveto_str
           );
           log_seq++;
           if (log_seq % 10 == 0) saveLogCounters();
@@ -707,8 +701,8 @@ void vTaskSerial( void *pvParameters ){
           snprintf(
             msg,
             sizeof(msg),
-            "%s,%u,%lu,-,%s,%.3f",
-            ts_string, log_epoch, log_seq, sensor_decoded, sensor_value
+            "%s,%lu,-,%s,%.3f",
+            ts_string, log_seq, sensor_decoded, sensor_value
           );
           log_seq++;
           if (log_seq % 10 == 0) saveLogCounters();

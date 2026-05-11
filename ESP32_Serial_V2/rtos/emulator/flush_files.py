@@ -72,7 +72,7 @@ def flush():
 
                 res_reset = requests.post(f"{BASE_URL}/reset_log", timeout=10)
                 if res_reset.status_code == 200:
-                    print("  → Log reseteado en el ESP32 (epoch incrementado).")
+                    print("  → Log reseteado en el ESP32.")
                 else:
                     print(f"  [X] Error al resetear el log ({res_reset.status_code})")
 
