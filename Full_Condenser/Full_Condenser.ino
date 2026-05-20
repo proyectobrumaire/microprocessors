@@ -3,13 +3,17 @@
 #include "Communication.h"
 #include "CondenserControl.h"
 
-const int N_Sensores = 17;
+const int N_Sensores = 11;
 
 
 /*=========TIEMPOS=========*/
 unsigned long t_tikcer_anterior = 0;
 const int tiempoLectura = 1;      // Intervalo de lectura y control en segundos
 int tiempoSensor = 0; //Tiempo actual del sensor
+
+/*=========VOLCADO=========*/
+const uint16_t volcado_interval_horas = 24;  // Cada cuántas horas volcar el plato
+uint32_t last_volcado_hours = 0;
 
 
 /*=========CONTROL=========*/
@@ -30,17 +34,14 @@ CondenserControl::Pins ctrlCom{
   30, 31, 2, 28, 29, 3,
   // IBT-2 (rpwm,lpwm,ren,len)
   5, 4, 39, 33, 
-  //Sensor de corriente (cSP1, cSP2, cSP3);
-  A15, A14, A13,
   //Balanza (dout, clk)
   A1, A0,
   //Sensor  ACS712
-  A3
+  A3,
+  //motores (M1, M2, Mv)
+  10, 11, 13        
 };
 
-//M1 -> 10
-//M2 -> 11
-//ServoValve -> 13
 //Leds -> 
 //Rain A0 ->
 //Rain D0 ->
@@ -50,6 +51,8 @@ CondenserCom com(pinsCom);
 CondenserControl ctrl (ctrlCom);
 
 float sensores_promedio[N_Sensores];
+bool peltier_actual;
+
 
 void setup(void) {
   Serial.begin(9600);   //Debugging...
@@ -65,13 +68,15 @@ void setup(void) {
 
   ctrl.leer_sensores_y_controlar();
   ctrl.promediar(sensores_promedio); //Primera lectura
-  com.report_boot(sensores_promedio); //Repotar el boot
+  //com.report_boot(sensores_promedio); //Repotar el boot
+  com.when_event(CondenserCom::BOOT, sensores_promedio);
+  peltier_actual = ctrl.peltier_on;
+  last_volcado_hours = com.get_rtc_hours();
 }
 
 
 void loop(void) {
-  com.safety_lock_timeout(); //Verificar que no se haya vencido el lock del esp32
-  com.recieve_commands(); //Por si hay que bloquear el serial
+  com.recieve_commands();
 
   //Eviar pulso (Aquí sucede una interrupción) por el mismo sensor
   com.sendSensorPulse();
@@ -82,7 +87,20 @@ void loop(void) {
     Serial.println("Flag from Timer Taken");
     ctrl.promediar(sensores_promedio);
     com.clearRtcTimerFlags();
-    com.handle_interruption(false, sensores_promedio); //sin foto
+    com.when_event(CondenserCom::PERIODIC, sensores_promedio);
+    //com.handle_interruption(false, sensores_promedio); //sin foto
+
+    // Verificar si es hora de volcar
+    uint32_t current_hours = com.get_rtc_hours();
+    uint32_t elapsed = (current_hours >= last_volcado_hours)
+                       ? (current_hours - last_volcado_hours)
+                       : (current_hours + 744 - last_volcado_hours);  // rollover de mes
+    if (elapsed >= volcado_interval_horas) {
+      Serial.println("Hora de volcar el plato");
+      ctrl.ejecutar_volcado();
+      com.when_event(CondenserCom::VOLCADO, sensores_promedio);
+      last_volcado_hours = com.get_rtc_hours();
+    }
   }
 
   //Manejar la interrupción del sensor
@@ -90,9 +108,21 @@ void loop(void) {
     //Serial.println(String(com.lastSensorFlagRaisen));
     Serial.println("Flag from Sensor Taken");
     ctrl.promediar(sensores_promedio);
-    com.handle_interruption(true, sensores_promedio); //con foto
+    //com.handle_interruption(true, sensores_promedio); //con foto
+    com.when_event(CondenserCom::BIRD, sensores_promedio);
   }
 
+  //Mirar si la celda peltier cambió de estado
+  if (ctrl.peltier_on^peltier_actual) {
+    //Serial.println(String(com.lastSensorFlagRaisen));
+    Serial.println("Flag from Peltier Control Taken");
+    ctrl.promediar(sensores_promedio);
+    //com.handle_interruption(true, sensores_promedio); //con foto
+    uint8_t ev = ctrl.peltier_on ? CondenserCom::PELTIER_ON : CondenserCom::PELTIER_OFF;
+    com.when_event(ev, sensores_promedio);
+    peltier_actual = ctrl.peltier_on;
+  }
+  
   //Contador de segundos
   unsigned long t_tikcer_actual = millis();  //Cuánto lleva prendido el arduino en milisegundos
   if (t_tikcer_actual - t_tikcer_anterior >= 1000) {

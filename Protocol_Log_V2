@@ -9,22 +9,25 @@
 //
 // El formato V1 dependía exclusivamente del timestamp para identificar
 // y ordenar líneas. Si el RTC está corrupto, el orden se pierde.
-// V2 agrega dos contadores persistentes (epoch, seq) que garantizan
-// identidad y orden en cualquier condición.
+// V2 agrega un contador persistente (seq) que garantiza identidad
+// y orden en cualquier condición.
 
 
 // ============================================================
-// CONTADORES EN NVS (ESP32)
+// CONTADOR EN NVS (ESP32)
 // ============================================================
 
-// Clave        Tipo     Descripción
-// log_epoch    uint16   Sube 1 cada vez que log.txt es borrado deliberadamente
-// log_seq      uint32   Sube 1 con cada línea escrita. Resetea junto con log_epoch
+// Clave      Tipo     Descripción
+// log_seq    uint32   Sube 1 con cada línea escrita. NUNCA se resetea.
 
-// Ambos sobreviven reinicios normales (corte de luz, watchdog, ESP.restart()).
-// Solo se pierden si el NVS es borrado explícitamente (reflash con erase all).
+// Sobrevive reinicios normales (corte de luz, watchdog, ESP.restart()).
+// Solo se pierde si el NVS es borrado explícitamente (reflash con erase all).
 // Con log_seq como uint32 (máx ~4.2 mil millones) y un log cada 30 s,
 // el contador dura ~4.000 años sin desbordarse.
+
+// Nota: al borrar log.txt (via /reset_log), seq continúa desde donde estaba.
+// Esto garantiza que las entradas del nuevo archivo no colisionen con las
+// anteriores en el backend.
 
 
 // ============================================================
@@ -32,18 +35,21 @@
 // ============================================================
 
 // Evento:
-// YY-MM-DDTHH-MM-SS, <epoch>, <seq>, <EVENT_NAME>, -,    0
+// YY-MM-DDTHH-MM-SS, <seq>, <EVENT_NAME>, -,    0
 
 // Dato de sensor:
-// YY-MM-DDTHH-MM-SS, <epoch>, <seq>, -,             <SENSOR_KEY>, <value>
+// YY-MM-DDTHH-MM-SS, <seq>, -,             <SENSOR_KEY>, <value>
 
 // Ejemplos:
-// 26-05-07T08-00-00, 0,  0,   BOOT, -,    0
-// 26-05-07T08-00-05, 0,  1,   -,    T1_K, 24.500
-// 26-05-07T08-00-05, 0,  2,   -,    H1_K, 68.000
-// 26-05-07T08-30-00, 0,  3,   BIRD, -,    0
-// 26-05-07T10-00-00, 0,  140, BOOT, -,    0    ← reinicio, epoch sin cambio
-// 26-05-07T10-00-10, 0,  141, -,    T1_K, 25.100
+// 26-05-07T08-00-00, 0,   BOOT, -,    0
+// 26-05-07T08-00-05, 1,   -,    T1_K, 24.500
+// 26-05-07T08-00-05, 2,   -,    H1_K, 68.000
+// 26-05-07T08-30-00, 3,   BIRD, -,    0
+// 26-05-07T10-00-00, 140, BOOT, -,    0    ← reinicio, seq continúa
+// 26-05-07T10-00-10, 141, -,    T1_K, 25.100
+
+// Tras un /reset_log (log.txt borrado, seq=141 en NVS):
+// 26-05-07T11-00-00, 142, BOOT, -,    0    ← nuevo archivo, seq no retrocede
 
 
 // ============================================================
@@ -53,7 +59,7 @@
 // Una sesión es el conjunto de líneas entre dos BOOT events consecutivos.
 // El BOOT siempre es la primera línea de cada sesión (seq más bajo).
 //
-// Orden entre sesiones:  garantizado por (epoch, seq) del BOOT que las abre.
+// Orden entre sesiones:  garantizado por el seq del BOOT que las abre.
 // Orden dentro de sesión: garantizado por seq.
 //
 // Esto permite reconstruir el orden total aunque todos los timestamps
@@ -84,20 +90,20 @@
 
 
 // ============================================================
-// BORRADO DEL LOG Y CAMBIO DE EPOCH
+// BORRADO DEL LOG
 // ============================================================
 
-// El cambio de epoch ocurre únicamente cuando log.txt es borrado deliberadamente.
-// Es la única forma de resetear seq a 0 sin colisión de identidad.
+// El borrado de log.txt es opcional y solo afecta al archivo en la SD.
+// seq NO se resetea en ningún caso.
 //
 // Flujo de sync con borrado:
 //   1. App descarga log.txt y sube todas las entradas nuevas al backend.
-//   2. App envía comando al ESP32 para borrar log.txt.
-//   3. ESP32: incrementa log_epoch, resetea log_seq a 0, borra log.txt.
-//   4. Próximo BOOT: (epoch=N+1, seq=0) — sin colisión con entradas anteriores.
+//   2. App envía POST /reset_log al ESP32.
+//   3. ESP32 borra log.txt. seq continúa desde su valor actual en NVS.
+//   4. Próximas líneas: seq=N+1, N+2, ... — sin colisión con entradas anteriores.
 //
-// Nota: el borrado es opcional. Si no se borra, last_synced_lines en la app
-// evita duplicar entradas en syncs posteriores.
+// Nota: si /reset_log falla, la app guarda last_synced_lines en SharedPreferences
+// para evitar duplicar entradas en syncs posteriores.
 
 
 // ============================================================
@@ -107,7 +113,7 @@
 // Usa el comando serial existente CMD_HELLO con modo SET_TIME (0xA0).
 //
 // Flujo:
-//   1. App hace sync → envía hora actual al ESP32 via HTTP.
+//   1. App hace sync → envía hora actual al ESP32 via HTTP (POST /set_time).
 //   2. ESP32 recibe la hora → reenvía CMD_HELLO + SET_TIME + timestamp al Arduino.
 //   3. Arduino corrige el RTC.
 //   4. El siguiente BOOT event ya tiene timestamp válido.

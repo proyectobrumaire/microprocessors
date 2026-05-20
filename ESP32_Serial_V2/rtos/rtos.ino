@@ -1,6 +1,6 @@
 #include <Arduino.h>
 #include "FS.h"
-#include "SD_MMC.h"// SD Card ESP32
+#include "SD_MMC.h"  // SD Card ESP32
 #include "SPI.h"
 #include "soc/soc.h"           // Disable brownour problems
 #include "soc/rtc_cntl_reg.h"  // Disable brownour problems
@@ -8,7 +8,7 @@
 #include "esp_camera.h"
 #include "SerialTransfer.h"
 #include <WiFi.h>
-#include <Preferences.h> // Librería para usar NVS de forma fácil
+#include <Preferences.h>  // Librería para usar NVS de forma fácil
 #include <esp_http_server.h>
 #include <ArduinoJson.h>
 #include <nvs_flash.h>
@@ -23,8 +23,11 @@
 
 #define STACK_SERIAL 4096
 #define STACK_CAMERA 8192
-#define STACK_SD     8192
-#define STACK_HTTP   8192
+#define STACK_SD 8192
+#define STACK_HTTP 8192
+#define STACK_SYNC 2048
+
+#define SYNC_COUNTERS_INTERVAL_MS (5 * 60 * 1000)
 
 // Pin definition for CAMERA_MODEL_AI_THINKER
 #define PWDN_GPIO_NUM 32
@@ -51,57 +54,49 @@ enum KeyCode : uint8_t {
   T3_K = 0x22,  // Placa fría 1
   T4_K = 0x23,  // Placa fría 2
   T5_K = 0x24,  // Temp media fría
-  T6_K = 0x25,  // Temp objetivo
   H1_K = 0x26,  // Humedad externa
   H2_K = 0x27,  // Humedad interna
-  E1_K = 0x28,  // Error
-  E2_K = 0x29,  // Error acumulado
   P1_K = 0x2A,  // Punto de rocío
-  P2_K = 0x2B,   // PWM aplicado
-  I1_K = 0x2C,   //Corriente uno
-  I2_K = 0x2D,   //Corriente dos
-  I3_K = 0x2E,   //Corriente tres
-  I4_K = 0x2F,   //Corriente filtrada
-  W1_K = 0x30    //Peso del agua
+  P2_K = 0x2B,  // PWM aplicado
+  I4_K = 0x2F,  //Corriente filtrada
+  W1_K = 0x30   //Peso del agua
 };
 
 //Códigos de la trama
 enum Command : uint8_t {
-  CMD_TAKE_PHOTO    = 0x01,
-  CMD_SAVE_EVENT    = 0x02,
-  CMD_SAVE_DATA     = 0x03,
-  CMD_LOCKARDUINO   = 0x05,
-  CMD_UNLOCKARDUINO = 0x06
+  CMD_TAKE_PHOTO = 0x01,
+  CMD_SAVE_EVENT = 0x02,
+  CMD_SAVE_DATA = 0x03,
+  CMD_HELLO = 0x04
 };
 
+#define CMD_HELLO_SET_TIME 0xA0
+
 // Códigos de los eventos
-enum EventCode : uint8_t {
-  BOOT        = 0x80,
-  BIRD        = 0x81,
-  PERIODIC    = 0x82
+  enum EventCode : uint8_t {
+  BOOT = 0x80,
+  BIRD = 0x81,
+  PERIODIC = 0x82,
+  PELTIER_ON = 0x83,
+  PELTIER_OFF = 0x84,
+  VOLCADO = 0x85
 };
 
 //Método para decodificar el sensor enviado
-const char* keyLabel(uint8_t key) {
+const char *keyLabel(uint8_t key) {
   switch (key) {
     case T1_K: return "T1_K";
     case T2_K: return "T2_K";
     case T3_K: return "T3_K";
     case T4_K: return "T4_K";
     case T5_K: return "T5_K";
-    case T6_K: return "T6_K";
     case H1_K: return "H1_K";
     case H2_K: return "H2_K";
-    case E1_K: return "E1_K";
-    case E2_K: return "E2_K";
     case P1_K: return "P1_K";
     case P2_K: return "P2_K";
-    case I1_K: return "I1_K";   //Corriente uno
-    case I2_K: return "I2_K";   //Corriente dos
-    case I3_K: return "I3_K";   //Corriente tres
-    case I4_K: return "I4_K";   //Corriente cuatro
-    case W1_K: return "W1_K";   //Corriente tres
-    default:   return "Z0_K";
+    case I4_K: return "I4_K";  //Corriente cuatro
+    case W1_K: return "W1_K";  //Peso del agua
+    default: return "Z0_K";
   }
 }
 
@@ -116,14 +111,15 @@ typedef enum {
 
 //Estructura de los eventos de las tasks (FreeRTOS)
 typedef struct {
-  EventType type; //Tipo de evento
-  char filename[64]; //Nombre de la foto
-  void *data; //Puntero de la foto
-  char msg[128]; //Mensaje para guardar en la SD
+  EventType type;     //Tipo de evento
+  char filename[64];  //Nombre de la foto
+  void *data;         //Puntero de la foto
+  char msg[128];      //Mensaje para guardar en la SD
 } Event;
 
 SerialTransfer linkReciever;
 Preferences prefs;
+Preferences logPrefs;
 
 QueueHandle_t cameraQueue = 0;
 QueueHandle_t sdQueue = 0;
@@ -132,28 +128,39 @@ SemaphoreHandle_t SDMutex = 0;
 httpd_handle_t server = NULL;
 bool is_sta_mode = false;
 
+uint32_t log_seq = 0;
+volatile bool pendingSetTime = false;
+uint16_t pendingTs[6] = { 0 };
+portMUX_TYPE timeMux = portMUX_INITIALIZER_UNLOCKED;
+
 const char *tag = "Main";
 
 esp_err_t init_led(void);
 esp_err_t create_tasks(void);
-void vTaskR( void *pvParameters );
-void vTaskSerial ( void *pvParameters );
-void vTaskCamera ( void *pvParameters );
-void vTaskSDCard ( void *pvParameters );
-void configESPCamera(); //Configurar ESP32 Cam
+void vTaskR(void *pvParameters);
+void vTaskSerial(void *pvParameters);
+void vTaskCamera(void *pvParameters);
+void vTaskSDCard(void *pvParameters);
+void configESPCamera();  //Configurar ESP32 Cam
+void loadLogCounters();
+void saveLogCounters();
+void vTaskSyncCounters(void *pvParameters);
+esp_err_t reset_log_handler(httpd_req_t *req);
+esp_err_t set_time_handler(httpd_req_t *req);
 
 void setup() {
   // Inicialización manual de la NVS
   esp_err_t err = nvs_flash_init();
   if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
-      ESP_ERROR_CHECK(nvs_flash_erase());
-      err = nvs_flash_init();
+    ESP_ERROR_CHECK(nvs_flash_erase());
+    err = nvs_flash_init();
   }
   ESP_ERROR_CHECK(err);
+  loadLogCounters();
   Serial.begin(115200);
   linkReciever.begin(Serial);
   initMicroSDCard();
-  WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0); //??
+  WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0);  //??
   configESPCamera();
   create_tasks();
 
@@ -168,11 +175,11 @@ void setup() {
   if (WiFi.status() == WL_CONNECTED) {
     ESP_LOGW(tag, "Conected in STA mode");
     is_sta_mode = true;
-    
-    if (!MDNS.begin("esp32cam")) { 
-        ESP_LOGE(tag, "Error configurando mDNS");
+
+    if (!MDNS.begin("esp32cam")) {
+      ESP_LOGE(tag, "Error configurando mDNS");
     } else {
-        MDNS.addService("http", "tcp", 80);
+      MDNS.addService("http", "tcp", 80);
     }
 
   } else {
@@ -196,7 +203,9 @@ void configESPCamera() {
   config.ledc_channel = LEDC_CHANNEL_0;
   config.ledc_timer = LEDC_TIMER_0;
   config.pin_d0 = Y2_GPIO_NUM;
-  config.pin_d1 = Y3_GPIO_NUM;
+  config.pin_d1 = Y3_GPIO_NUM
+
+    ;
   config.pin_d2 = Y4_GPIO_NUM;
   config.pin_d3 = Y5_GPIO_NUM;
   config.pin_d4 = Y6_GPIO_NUM;
@@ -255,40 +264,56 @@ void configESPCamera() {
 //Méotdo SD
 void initMicroSDCard() {
   if (!SD_MMC.begin("/sdcard", true)) {
-     ESP_LOGE(tag,"MicroSD Card Mount Failed");
+    ESP_LOGE(tag, "MicroSD Card Mount Failed");
     //SD_present =  false;
     return;
   }
   uint8_t cardType = SD_MMC.cardType();
   if (cardType == CARD_NONE) {
-    ESP_LOGE(tag,"No MicroSD Card found");
+    ESP_LOGE(tag, "No MicroSD Card found");
     //SD_present =  false;
     return;
   }
   //SD_present =  true;
 }
 //Métodos seriales
-void sendACK(uint16_t ts[6], uint8_t cmd,  uint8_t status){
-  delay(5);//Porque aja
+void sendACK(uint16_t ts[6], uint8_t cmd, uint8_t status) {
+  delay(5);  //Porque aja
   uint16_t len;
   len = 0;
-  len = linkReciever.txObj(ts,  len, 6 * sizeof(uint16_t));
+  len = linkReciever.txObj(ts, len, 6 * sizeof(uint16_t));
   len = linkReciever.txObj(cmd, len);
   len = linkReciever.txObj(status, len);
-  linkReciever.sendData(len); //Enviar el evento
+  linkReciever.sendData(len);  //Enviar el evento
 }
 //Métodos del serivor
 void saveCredentials(String s, String p) {
-    prefs.begin("wifi_conf", false);
-    prefs.putString("ssid", s);
-    prefs.putString("pass", p);
-    prefs.end();
+  prefs.begin("wifi_conf", false);
+  prefs.putString("ssid", s);
+  prefs.putString("pass", p);
+  prefs.end();
 }
 void loadCredentials(String &s, String &p) {
-    prefs.begin("wifi_conf", true);
-    s = prefs.getString("ssid", "default_ssid");
-    p = prefs.getString("pass", "default_pass");
-    prefs.end();
+  prefs.begin("wifi_conf", true);
+  s = prefs.getString("ssid", "default_ssid");
+  p = prefs.getString("pass", "default_pass");
+  prefs.end();
+}
+void loadLogCounters() {
+  logPrefs.begin("log_conf", true);
+  log_seq = logPrefs.getUInt("log_seq", 0);
+  logPrefs.end();
+}
+void saveLogCounters() {
+  logPrefs.begin("log_conf", false);
+  logPrefs.putUInt("log_seq", log_seq);
+  logPrefs.end();
+}
+void vTaskSyncCounters(void *pvParameters) {
+  while (1) {
+    vTaskDelay(pdMS_TO_TICKS(SYNC_COUNTERS_INTERVAL_MS));
+    saveLogCounters();
+  }
 }
 esp_err_t wifi_setup_handler(httpd_req_t *req) {
   if (req->content_len >= 128) {
@@ -296,189 +321,233 @@ esp_err_t wifi_setup_handler(httpd_req_t *req) {
     return ESP_FAIL;
   }
   char buf[128];
-  int ret = httpd_req_recv(req, buf, req->content_len); //Recibe los datos enviados
+  int ret = httpd_req_recv(req, buf, req->content_len);  //Recibe los datos enviados
   if (ret <= 0) return ESP_FAIL;
   buf[ret] = '\0';
-  JsonDocument doc; // Parsear JSON
+  JsonDocument doc;  // Parsear JSON
   DeserializationError error = deserializeJson(doc, buf);
   if (error) {
-      httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "JSON Invalido");
-      return ESP_FAIL;
+    httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "JSON Invalido");
+    return ESP_FAIL;
   }
-  const char* ssid = doc["ssid"];
-  const char* pass = doc["password"];
+  const char *ssid = doc["ssid"];
+  const char *pass = doc["password"];
   if (ssid && pass) {
-      saveCredentials(ssid, pass);
-      httpd_resp_sendstr(req, "{\"status\":\"Credenciales guardadas. Reiniciando...\"}");
-      delay(1000);
-      ESP.restart();
+    saveCredentials(ssid, pass);
+    httpd_resp_sendstr(req, "{\"status\":\"Credenciales guardadas. Reiniciando...\"}");
+    delay(1000);
+    ESP.restart();
   } else {
-      httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Faltan campos ssid/password");
+    httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Faltan campos ssid/password");
   }
   return ESP_OK;
 }
 esp_err_t list_files_sd_handler(httpd_req_t *req) {
-    if (is_sta_mode == false){
-      return httpd_resp_send_err(req, HTTPD_403_FORBIDDEN, "Only STA mode for this mode");
-      return ESP_FAIL;
-    }
-    if (req->content_len >= 128) {
-      httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Too long JSON");
-      return ESP_FAIL;
-    }
+  if (is_sta_mode == false) {
+    return httpd_resp_send_err(req, HTTPD_403_FORBIDDEN, "Only STA mode for this mode");
+    return ESP_FAIL;
+  }
+  if (req->content_len >= 128) {
+    httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Too long JSON");
+    return ESP_FAIL;
+  }
 
-    if (xSemaphoreTake(SDMutex, pdMS_TO_TICKS(1000)) != pdTRUE) {
-        return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "SD Busy (503)");
-    }
+  if (xSemaphoreTake(SDMutex, pdMS_TO_TICKS(1000)) != pdTRUE) {
+    return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "SD Busy (503)");
+  }
 
-    File root = SD_MMC.open("/");
-    if (!root || !root.isDirectory()) {
-        xSemaphoreGive(SDMutex);
-        return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to open Dir");
-    } 
-    httpd_resp_sendstr_chunk(req, "{\"files\":[");
-    File file = root.openNextFile();
-    int fileCount = 0;
-    bool first = true;
-    while (file && fileCount < MAX_FILES_TO_LIST ) {
-        if (!file.isDirectory()) {
-            if (!first) httpd_resp_sendstr_chunk(req, ",");
-            char buf[128];
-            snprintf(buf, sizeof(buf), "{\"name\":\"%s\",\"size\":%d}", file.name(), file.size());
-            httpd_resp_sendstr_chunk(req, buf);
-            first = false;
-            fileCount++;
-        }
-        file = root.openNextFile();
-    }
-    bool truncated = (file) ? true : false;
-
-    char tail[64];
-    snprintf(tail, sizeof(tail), "], \"count\":%d, \"truncated\":%s}", 
-             fileCount, truncated ? "true" : "false");
-    
-    httpd_resp_sendstr_chunk(req, tail);
-    httpd_resp_sendstr_chunk(req, NULL);
-
+  File root = SD_MMC.open("/");
+  if (!root || !root.isDirectory()) {
     xSemaphoreGive(SDMutex);
-    return ESP_OK;
+    return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to open Dir");
+  }
+  httpd_resp_sendstr_chunk(req, "{\"files\":[");
+  File file = root.openNextFile();
+  int fileCount = 0;
+  bool first = true;
+  while (file && fileCount < MAX_FILES_TO_LIST) {
+    if (!file.isDirectory()) {
+      if (!first) httpd_resp_sendstr_chunk(req, ",");
+      char buf[128];
+      snprintf(buf, sizeof(buf), "{\"name\":\"%s\",\"size\":%d}", file.name(), file.size());
+      httpd_resp_sendstr_chunk(req, buf);
+      first = false;
+      fileCount++;
+    }
+    file = root.openNextFile();
+  }
+  bool truncated = (file) ? true : false;
+
+  char tail[64];
+  snprintf(tail, sizeof(tail), "], \"count\":%d, \"truncated\":%s}",
+           fileCount, truncated ? "true" : "false");
+
+  httpd_resp_sendstr_chunk(req, tail);
+  httpd_resp_sendstr_chunk(req, NULL);
+
+  xSemaphoreGive(SDMutex);
+  return ESP_OK;
 }
 esp_err_t download_file_handler(httpd_req_t *req) {
-    if (!is_sta_mode) {
-        return httpd_resp_send_err(req, HTTPD_403_FORBIDDEN, "Only STA mode allowed");
-    }
-    size_t buf_len = httpd_req_get_url_query_len(req) + 1;
-    if (buf_len <= 1) {
-        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Missing file parameter");
-    }
+  if (!is_sta_mode) {
+    return httpd_resp_send_err(req, HTTPD_403_FORBIDDEN, "Only STA mode allowed");
+  }
+  size_t buf_len = httpd_req_get_url_query_len(req) + 1;
+  if (buf_len <= 1) {
+    return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Missing file parameter");
+  }
 
-    char* buf = (char*)malloc(buf_len);
-    if (!buf) return ESP_ERR_NO_MEM; 
-    esp_err_t query_status = httpd_req_get_url_query_str(req, buf, buf_len);
-    char param[64];
-    
-    if (query_status != ESP_OK || httpd_query_key_value(buf, "file", param, sizeof(param)) != ESP_OK) {
-        free(buf);
-        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid query");
-    }
+  char *buf = (char *)malloc(buf_len);
+  if (!buf) return ESP_ERR_NO_MEM;
+  esp_err_t query_status = httpd_req_get_url_query_str(req, buf, buf_len);
+  char param[64];
+
+  if (query_status != ESP_OK || httpd_query_key_value(buf, "file", param, sizeof(param)) != ESP_OK) {
     free(buf);
-    if (xSemaphoreTake(SDMutex, pdMS_TO_TICKS(2000)) != pdTRUE) {
-      return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "SD Busy");
-    }
+    return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid query");
+  }
+  free(buf);
+  if (xSemaphoreTake(SDMutex, pdMS_TO_TICKS(2000)) != pdTRUE) {
+    return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "SD Busy");
+  }
 
-    String path = "/" + String(param);
-    File file = SD_MMC.open(path.c_str(), FILE_READ);
-    if (!file || file.isDirectory()) {
-        if (file) file.close();
-        xSemaphoreGive(SDMutex);
-        return httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, "File not found");
-    }
-    httpd_resp_set_type(req, "image/jpeg");
-    //Añadir un header para que el navegador sepa que es una descarga
-    httpd_resp_set_hdr(req, "Content-Disposition", "inline; filename=capture.jpg");
+  String path = "/" + String(param);
+  File file = SD_MMC.open(path.c_str(), FILE_READ);
+  if (!file || file.isDirectory()) {
+    if (file) file.close();
+    xSemaphoreGive(SDMutex);
+    return httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, "File not found");
+  }
+  httpd_resp_set_type(req, "image/jpeg");
+  //Añadir un header para que el navegador sepa que es una descarga
+  httpd_resp_set_hdr(req, "Content-Disposition", "inline; filename=capture.jpg");
 
-    char *chunk = (char *)malloc(1024);
-    if (!chunk) {
-        return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "No RAM for chunk");
-    }  
-    size_t read_bytes;
-    esp_err_t res = ESP_OK;
-    while ((read_bytes = file.read((uint8_t*)chunk, sizeof(chunk))) > 0) {
-        res = httpd_resp_send_chunk(req, chunk, read_bytes);
-        if (res != ESP_OK) {
-            ESP_LOGE("HTTP", "Abortado: Cliente desconectado");
-            break; 
-        }
+  char *chunk = (char *)malloc(1024);
+  if (!chunk) {
+    return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "No RAM for chunk");
+  }
+  size_t read_bytes;
+  esp_err_t res = ESP_OK;
+  while ((read_bytes = file.read((uint8_t *)chunk, 1024)) > 0) {
+    res = httpd_resp_send_chunk(req, chunk, read_bytes);
+    if (res != ESP_OK) {
+      ESP_LOGE("HTTP", "Abortado: Cliente desconectado");
+      break;
     }
-    free(chunk);
-    file.close();
-    xSemaphoreGive(SDMutex); 
-    httpd_resp_send_chunk(req, NULL, 0); 
-    return res;
+  }
+  free(chunk);
+  file.close();
+  xSemaphoreGive(SDMutex);
+  httpd_resp_send_chunk(req, NULL, 0);
+  return res;
 }
-esp_err_t delete_file_handler(httpd_req_t *req){
-    if (!is_sta_mode) {
-        return httpd_resp_send_err(req, HTTPD_403_FORBIDDEN, "Only STA mode allowed");
-    }
-    size_t buf_len = httpd_req_get_url_query_len(req) + 1;
-    if (buf_len <= 1) {
-        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Missing file parameter");
-    }
+esp_err_t delete_file_handler(httpd_req_t *req) {
+  if (!is_sta_mode) {
+    return httpd_resp_send_err(req, HTTPD_403_FORBIDDEN, "Only STA mode allowed");
+  }
+  size_t buf_len = httpd_req_get_url_query_len(req) + 1;
+  if (buf_len <= 1) {
+    return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Missing file parameter");
+  }
 
-    char* buf = (char*)malloc(buf_len);
-    if (!buf) return ESP_ERR_NO_MEM; 
-    esp_err_t query_status = httpd_req_get_url_query_str(req, buf, buf_len);
-    char param[64];
-    
-    if (query_status != ESP_OK || httpd_query_key_value(buf, "file", param, sizeof(param)) != ESP_OK) {
-        free(buf);
-        return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid query");
-    }
+  char *buf = (char *)malloc(buf_len);
+  if (!buf) return ESP_ERR_NO_MEM;
+  esp_err_t query_status = httpd_req_get_url_query_str(req, buf, buf_len);
+  char param[64];
+
+  if (query_status != ESP_OK || httpd_query_key_value(buf, "file", param, sizeof(param)) != ESP_OK) {
     free(buf);
-    if (xSemaphoreTake(SDMutex, pdMS_TO_TICKS(2000)) != pdTRUE) {
-      return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "SD Busy");
-    }
+    return httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid query");
+  }
+  free(buf);
+  if (xSemaphoreTake(SDMutex, pdMS_TO_TICKS(2000)) != pdTRUE) {
+    return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "SD Busy");
+  }
 
-    String path = "/" + String(param);
-    if (!SD_MMC.exists(path.c_str())) {
-        xSemaphoreGive(SDMutex);
-        return httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, "File not found");
-    }
-    if (SD_MMC.remove(path.c_str())) {
-        xSemaphoreGive(SDMutex);
-        ESP_LOGI("SD", "Archivo eliminado: %s", path.c_str());
-        httpd_resp_sendstr(req, "{\"status\":\"Eliminado correctamente\"}");
-        return ESP_OK;
-    } else {
-        xSemaphoreGive(SDMutex);
-        return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to remove file");
-    }
+  String path = "/" + String(param);
+  if (!SD_MMC.exists(path.c_str())) {
+    xSemaphoreGive(SDMutex);
+    return httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, "File not found");
+  }
+  if (SD_MMC.remove(path.c_str())) {
+    xSemaphoreGive(SDMutex);
+    ESP_LOGI("SD", "Archivo eliminado: %s", path.c_str());
+    httpd_resp_sendstr(req, "{\"status\":\"Eliminado correctamente\"}");
+    return ESP_OK;
+  } else {
+    xSemaphoreGive(SDMutex);
+    return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to remove file");
+  }
+}
+esp_err_t reset_log_handler(httpd_req_t *req) {
+  if (!is_sta_mode) {
+    return httpd_resp_send_err(req, HTTPD_403_FORBIDDEN, "Only STA mode allowed");
+  }
+  if (xSemaphoreTake(SDMutex, pdMS_TO_TICKS(2000)) != pdTRUE) {
+    return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "SD Busy");
+  }
+  if (SD_MMC.exists("/log.txt")) SD_MMC.remove("/log.txt");
+  xSemaphoreGive(SDMutex);
+  httpd_resp_sendstr(req, "{\"status\":\"ok\"}");
+  return ESP_OK;
+}
+esp_err_t set_time_handler(httpd_req_t *req) {
+  if (req->content_len == 0 || req->content_len >= 64) {
+    httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Bad length");
+    return ESP_FAIL;
+  }
+  char buf[64];
+  int ret = httpd_req_recv(req, buf, req->content_len);
+  if (ret <= 0) return ESP_FAIL;
+  buf[ret] = '\0';
+  JsonDocument doc;
+  if (deserializeJson(doc, buf)) {
+    httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "JSON invalido");
+    return ESP_FAIL;
+  }
+  JsonArray arr = doc["ts"].as<JsonArray>();
+  if (arr.size() != 6) {
+    httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "ts debe ser [YY,MM,DD,HH,MM,SS]");
+    return ESP_FAIL;
+  }
+  portENTER_CRITICAL(&timeMux);
+  for (int i = 0; i < 6; i++) pendingTs[i] = arr[i].as<uint16_t>();
+  pendingSetTime = true;
+  portEXIT_CRITICAL(&timeMux);
+  httpd_resp_sendstr(req, "{\"status\":\"ok\"}");
+  return ESP_OK;
 }
 void startServer() {
-    httpd_config_t config = HTTPD_DEFAULT_CONFIG();
-    config.server_port = 80;
-    if (httpd_start(&server, &config) == ESP_OK) {
-        // Ruta de configuración (Siempre disponible)
-        httpd_uri_t wifi_uri = { .uri="/wifi", .method=HTTP_POST, .handler=wifi_setup_handler };
-        httpd_register_uri_handler(server, &wifi_uri);
+  httpd_config_t config = HTTPD_DEFAULT_CONFIG();
+  config.server_port = 80;
+  if (httpd_start(&server, &config) == ESP_OK) {
+    // Ruta de configuración (Siempre disponible)
+    httpd_uri_t wifi_uri = { .uri = "/wifi", .method = HTTP_POST, .handler = wifi_setup_handler };
+    httpd_register_uri_handler(server, &wifi_uri);
 
-        httpd_uri_t list_files_uri = { .uri="/list", .method=HTTP_GET, .handler=list_files_sd_handler };
-        httpd_register_uri_handler(server, &list_files_uri);
+    httpd_uri_t list_files_uri = { .uri = "/list", .method = HTTP_GET, .handler = list_files_sd_handler };
+    httpd_register_uri_handler(server, &list_files_uri);
 
-        httpd_uri_t download_file_uri = { .uri="/download", .method=HTTP_GET, .handler=download_file_handler };
-        httpd_register_uri_handler(server, &download_file_uri);
+    httpd_uri_t download_file_uri = { .uri = "/download", .method = HTTP_GET, .handler = download_file_handler };
+    httpd_register_uri_handler(server, &download_file_uri);
 
-        httpd_uri_t delete_file_uri = { .uri="/delete", .method=HTTP_GET, .handler=delete_file_handler };
-        httpd_register_uri_handler(server, &delete_file_uri);
-    }
+    httpd_uri_t delete_file_uri = { .uri = "/delete", .method = HTTP_GET, .handler = delete_file_handler };
+    httpd_register_uri_handler(server, &delete_file_uri);
+
+    httpd_uri_t reset_log_uri = { .uri = "/reset_log", .method = HTTP_POST, .handler = reset_log_handler };
+    httpd_register_uri_handler(server, &reset_log_uri);
+
+    httpd_uri_t set_time_uri = { .uri = "/set_time", .method = HTTP_POST, .handler = set_time_handler };
+    httpd_register_uri_handler(server, &set_time_uri);
+  }
 }
-esp_err_t create_tasks(void){
+esp_err_t create_tasks(void) {
   cameraQueue = xQueueCreate(15, sizeof(Event));
   sdQueue = xQueueCreate(20, sizeof(Event));
   SDMutex = xSemaphoreCreateMutex();
 
   static uint8_t ucParameterToPass;
-  TaskHandle_t  xHandle = NULL;
+  TaskHandle_t xHandle = NULL;
 
   xTaskCreate(
     vTaskSerial,
@@ -486,8 +555,7 @@ esp_err_t create_tasks(void){
     STACK_SERIAL,
     &ucParameterToPass,
     2,
-    &xHandle
-  );
+    &xHandle);
 
   xTaskCreate(
     vTaskCamera,
@@ -495,8 +563,7 @@ esp_err_t create_tasks(void){
     STACK_CAMERA,
     &ucParameterToPass,
     1,
-    &xHandle
-  );
+    &xHandle);
 
 
   xTaskCreate(
@@ -505,104 +572,133 @@ esp_err_t create_tasks(void){
     STACK_SD,
     &ucParameterToPass,
     3,
-    &xHandle
-  );
+    &xHandle);
+
+  xTaskCreate(
+    vTaskSyncCounters,
+    "vTaskSyncCounters",
+    STACK_SYNC,
+    &ucParameterToPass,
+    1,
+    &xHandle);
   return ESP_OK;
 }
 
-void vTaskSerial( void *pvParameters ){
-  while(1)
-  {
-    if(linkReciever.available()) 
+void vTaskSerial(void *pvParameters) {
+  while (1) {
     {
+      portENTER_CRITICAL(&timeMux);
+      bool doSet = pendingSetTime;
+      uint16_t tsCopy[6];
+      if (doSet) {
+        memcpy(tsCopy, (const void *)pendingTs, sizeof(pendingTs));
+        pendingSetTime = false;
+      }
+      portEXIT_CRITICAL(&timeMux);
+      if (doSet) {
+        uint16_t len = 0;
+        uint8_t cmd = CMD_HELLO;
+        uint8_t mode = CMD_HELLO_SET_TIME;
+        len = linkReciever.txObj(tsCopy, len, 6 * sizeof(uint16_t));
+        len = linkReciever.txObj(cmd, len);
+        len = linkReciever.txObj(mode, len);
+        linkReciever.sendData(len);
+      }
+    }
+    if (linkReciever.available()) {
       //índice: Donde va la lecutra
       uint16_t idxx = 0;
-      uint16_t ts[6]; //Timestamp
-      uint8_t cmd ; //Qué comando llegó
-      
+      uint16_t ts[6];  //Timestamp
+      uint8_t cmd;     //Qué comando llegó
+
       //Primero lee el timestamp
       idxx = linkReciever.rxObj(ts, idxx, sizeof(ts));
       char ts_string[20];
       snprintf(ts_string, sizeof(ts_string),
-          "%02u-%02u-%02uT%02u-%02u-%02u",
-          ts[0], ts[1], ts[2], ts[3], ts[4], ts[5]);
+               "%02u-%02u-%02uT%02u-%02u-%02u",
+               ts[0], ts[1], ts[2], ts[3], ts[4], ts[5]);
       //Luego lee el CMD
       idxx = linkReciever.rxObj(cmd, idxx);
-      
-      switch (cmd){
+
+      switch (cmd) {
         //tomar la foto perro
         case CMD_TAKE_PHOTO:
-        {
-          for (int i = 0; i < numPhotosPerMessage; i++){
-            Event event_to_camera;
-            char filename[64];
-            snprintf(filename, sizeof(filename),"/image_%s_%d.jpg", ts_string, i);
-            event_to_camera.type = EVT_TAKE_PHOTO;
-            strncpy(event_to_camera.filename, filename, sizeof(event_to_camera.filename));
-            if ( !xQueueSend(cameraQueue, &event_to_camera, pdMS_TO_TICKS(portMAX_DELAY)) ){
-              ESP_LOGE(tag, "Error sending event to camera queue ");
+          {
+            for (int i = 0; i < numPhotosPerMessage; i++) {
+              Event event_to_camera;
+              char filename[64];
+              snprintf(filename, sizeof(filename), "/image_%s_%d.jpg", ts_string, i);
+              event_to_camera.type = EVT_TAKE_PHOTO;
+              strncpy(event_to_camera.filename, filename, sizeof(event_to_camera.filename));
+              if (!xQueueSend(cameraQueue, &event_to_camera, pdMS_TO_TICKS(portMAX_DELAY))) {
+                ESP_LOGE(tag, "Error sending event to camera queue ");
+              }
+              vTaskDelay(pdMS_TO_TICKS(10));
+            }
+            sendACK(ts, cmd, 1);
+            break;
+          }
+        //Guaradar el evento en la SD
+        case CMD_SAVE_EVENT:
+          {
+            Event event_to_sd;
+            char msg[128];  //Mensaje para guardar en la SD
+            uint8_t evento;
+            const char *eveto_str;
+            idxx = linkReciever.rxObj(evento, idxx);
+            //decode el evento a string
+            switch (evento) {
+              case BOOT: eveto_str = "BOOT"; break;
+              case BIRD: eveto_str = "BIRD"; break;
+              case PERIODIC: eveto_str = "PERIODIC"; break;
+              case PELTIER_ON: eveto_str = "PELTIER_ON"; break;
+              case PELTIER_OFF: eveto_str = "PELTIER_OFF"; break;
+              case VOLCADO: eveto_str = "VOLCADO"; break;
+              default: eveto_str = "INVALID_EV"; break;
+            }
+            snprintf(
+              msg,
+              sizeof(msg),
+              "%s,%lu,%s,-,0",
+              ts_string, log_seq, eveto_str);
+            log_seq++;
+            if (log_seq % 10 == 0) saveLogCounters();
+            event_to_sd.type = EVT_SAVE_LOG;
+            strncpy(event_to_sd.msg, msg, sizeof(event_to_sd.msg));
+            if (!xQueueSend(sdQueue, &event_to_sd, pdMS_TO_TICKS(500))) {
+              ESP_LOGE(tag, "Error sending to sd queue ");
             }
             vTaskDelay(pdMS_TO_TICKS(10));
+            sendACK(ts, cmd, 1);
+            break;
           }
-          sendACK(ts, cmd, 1);
-          break;
-        }
-        //Guaradar el evento en la SD
-        case CMD_SAVE_EVENT: 
-        {
-          Event event_to_sd;
-          char msg[128]; //Mensaje para guardar en la SD
-          uint8_t evento;
-          const char* eveto_str;
-          idxx = linkReciever.rxObj(evento, idxx);
-          //decode el evento a string
-          switch (evento){
-            case BOOT:      eveto_str = "BOOT"; break;
-            case BIRD:      eveto_str = "BIRD"; break;
-            case PERIODIC:  eveto_str = "PERIODIC"; break;
-            default:        eveto_str = "INVALID_EV"; break;
-          }
-          snprintf(
-            msg, 
-            sizeof(msg),
-            "%s,%s,-,0", 
-            ts_string, eveto_str
-          );
-          event_to_sd.type = EVT_SAVE_LOG;
-          strncpy(event_to_sd.msg, msg, sizeof(event_to_sd.msg));
-          if ( !xQueueSend(sdQueue, &event_to_sd, pdMS_TO_TICKS(500)) ){
-            ESP_LOGE(tag, "Error sending to sd queue ");
-          }
-          vTaskDelay(pdMS_TO_TICKS(10));
-          sendACK(ts, cmd, 1);
-          break;
-        }
 
         //Guaradar un dato de sensor en la SD
         case CMD_SAVE_DATA:
-        {
-          Event event_to_sd;
-          char msg[128]; //Mensaje para guardar en la SD
-          uint8_t sensor;
-          float sensor_value;
-          idxx = linkReciever.rxObj(sensor, idxx);
-          idxx = linkReciever.rxObj(sensor_value, idxx);
-          const char* sensor_decoded = keyLabel(sensor);
-          snprintf(
-            msg, 
-            sizeof(msg),
-            "%s,-,%s,%.3f", 
-            ts_string, sensor_decoded, sensor_value
-          );
-          event_to_sd.type = EVT_SAVE_LOG;
-          strncpy(event_to_sd.msg, msg, sizeof(event_to_sd.msg));
-          if (xQueueSend(sdQueue, &event_to_sd, pdMS_TO_TICKS(500)) != pdPASS ){
-            ESP_LOGE(tag, "Error sending to sd queue ");
+          {
+            Event event_to_sd;
+            char msg[128];  //Mensaje para guardar en la SD
+            uint8_t sensor;
+            float sensor_value;
+            idxx = linkReciever.rxObj(sensor, idxx);
+            idxx = linkReciever.rxObj(sensor_value, idxx);
+            const char *sensor_decoded = keyLabel(sensor);
+            snprintf(
+              msg,
+              sizeof(msg),
+              "%s,%lu,-,%s,%.3f",
+              ts_string, log_seq, sensor_decoded, sensor_value);
+            log_seq++;
+            if (log_seq % 10 == 0) saveLogCounters();
+            event_to_sd.type = EVT_SAVE_LOG;
+            strncpy(event_to_sd.msg, msg, sizeof(event_to_sd.msg));
+            if (xQueueSend(sdQueue, &event_to_sd, pdMS_TO_TICKS(500)) != pdPASS) {
+              ESP_LOGE(tag, "Error sending to sd queue ");
+            }
+            vTaskDelay(pdMS_TO_TICKS(10));
+            sendACK(ts, cmd, 1);
+            break;
           }
-          vTaskDelay(pdMS_TO_TICKS(10));
-          sendACK(ts, cmd, 1);
-          break;
-        }
         // Código si no coincide con ningún case
         default:
           ESP_LOGE(tag, "Invalid Format recieved for command");
@@ -613,10 +709,10 @@ void vTaskSerial( void *pvParameters ){
   }
 }
 
-void vTaskCamera ( void *pvParameters ){
-  while(1){
+void vTaskCamera(void *pvParameters) {
+  while (1) {
     Event receivedEvent;
-    if(xQueueReceive(cameraQueue, &receivedEvent, pdMS_TO_TICKS(portMAX_DELAY))) {
+    if (xQueueReceive(cameraQueue, &receivedEvent, pdMS_TO_TICKS(portMAX_DELAY))) {
       if (receivedEvent.type == EVT_TAKE_PHOTO) {
         camera_fb_t *fb = esp_camera_fb_get();
         if (!fb) {
@@ -627,12 +723,11 @@ void vTaskCamera ( void *pvParameters ){
         Event event_to_sd;
         event_to_sd.type = EVT_SAVE_PHOTO;
         strncpy(event_to_sd.filename, receivedEvent.filename, sizeof(event_to_sd.filename));
-        event_to_sd.data = (void*) fb;
+        event_to_sd.data = (void *)fb;
         if (xQueueSend(sdQueue, &event_to_sd, pdMS_TO_TICKS(500)) != pdPASS) {
           ESP_LOGE(tag, "SD Queue Full! Freeing FB");
-          esp_camera_fb_return(fb); 
+          esp_camera_fb_return(fb);
         }
-
       }
     }
     //Poling time
@@ -640,50 +735,51 @@ void vTaskCamera ( void *pvParameters ){
   }
 }
 
-void vTaskSDCard ( void *pvParameters ){
-  //Mejora: Podrías acumular 5 o 10 mensajes en un buffer y escribirlos todos juntos, 
+void vTaskSDCard(void *pvParameters) {
+  //Mejora: Podrías acumular 5 o 10 mensajes en un buffer y escribirlos todos juntos,
   //o dejar el archivo abierto si sabes que vendrán ráfagas de datos.
-  while(1){
+  while (1) {
     Event receivedEvent;
-    if(xQueueReceive(sdQueue, &receivedEvent, pdMS_TO_TICKS(portMAX_DELAY))) {
-      switch (receivedEvent.type){
-        case EVT_SAVE_PHOTO:{
-          camera_fb_t *fb = (camera_fb_t*) receivedEvent.data;
-          if (!fb) {
-            ESP_LOGE(tag, "Error: fb null");
-            break;
-          }
-          xSemaphoreTake(SDMutex, portMAX_DELAY);
-          fs::FS &fs = SD_MMC;
-          File file = fs.open(receivedEvent.filename, FILE_WRITE);
-          if (!file) {
+    if (xQueueReceive(sdQueue, &receivedEvent, pdMS_TO_TICKS(portMAX_DELAY))) {
+      switch (receivedEvent.type) {
+        case EVT_SAVE_PHOTO:
+          {
+            camera_fb_t *fb = (camera_fb_t *)receivedEvent.data;
+            if (!fb) {
+              ESP_LOGE(tag, "Error: fb null");
+              break;
+            }
+            xSemaphoreTake(SDMutex, portMAX_DELAY);
+            fs::FS &fs = SD_MMC;
+            File file = fs.open(receivedEvent.filename, FILE_WRITE);
+            if (!file) {
               ESP_LOGE(tag, "Failed to open file in write mode");
-          } else {
+            } else {
               file.write(fb->buf, fb->len);  // payload (image), payload length
               file.close();
-          }
-          xSemaphoreGive(SDMutex);
-          esp_camera_fb_return(fb);
-          fb = NULL;
-          break;
-        }
-        case EVT_SAVE_LOG:{
-          xSemaphoreTake(SDMutex, portMAX_DELAY);
-          File file = SD_MMC.open("/log.txt", FILE_APPEND);
-          if (!file) {
-            // Solo crear si NO existe; si existe, evitar truncar
-            if (!SD_MMC.exists("/log.txt")) {
-              file = SD_MMC.open("/log.txt", FILE_WRITE); // crea nuevo
             }
+            xSemaphoreGive(SDMutex);
+            esp_camera_fb_return(fb);
+            fb = NULL;
+            break;
           }
-          if (!file) { ESP_LOGE(tag, "Cant create/open log.txt"); }
-          file.println(receivedEvent.msg);
-          file.close();
-          xSemaphoreGive(SDMutex);
-          break;
-        }
+        case EVT_SAVE_LOG:
+          {
+            xSemaphoreTake(SDMutex, portMAX_DELAY);
+            File file = SD_MMC.open("/log.txt", FILE_APPEND);
+            if (!file) {
+              // Solo crear si NO existe; si existe, evitar truncar
+              if (!SD_MMC.exists("/log.txt")) {
+                file = SD_MMC.open("/log.txt", FILE_WRITE);  // crea nuevo
+              }
+            }
+            if (!file) { ESP_LOGE(tag, "Cant create/open log.txt"); }
+            file.println(receivedEvent.msg);
+            file.close();
+            xSemaphoreGive(SDMutex);
+            break;
+          }
       }
     }
   }
 }
-

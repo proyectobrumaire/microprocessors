@@ -2,5 +2,5 @@ Examples/
 
 *.jpg
 **/fotos_esp32/
-
+**/logs_esp32/
 **/.venv

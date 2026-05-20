@@ -7,9 +7,9 @@ CondenserCom* CondenserCom::s_self = nullptr;
 // Definición del arreglo estático
 const CondenserCom::KeyCode CondenserCom::kAllKeys[CondenserCom::N_DATA] = {
   CondenserCom::T1_K, CondenserCom::T2_K, CondenserCom::T3_K, CondenserCom::T4_K,
-  CondenserCom::T5_K, CondenserCom::T6_K, CondenserCom::H1_K, CondenserCom::H2_K,
-  CondenserCom::E1_K, CondenserCom::E2_K, CondenserCom::P1_K, CondenserCom::P2_K,
-  CondenserCom::I1_K, CondenserCom::I2_K, CondenserCom::I3_K,
+  CondenserCom::T5_K, CondenserCom::H1_K, CondenserCom::H2_K,
+  CondenserCom::P1_K, CondenserCom::P2_K,
+  CondenserCom::I4_K,
   CondenserCom::W1_K
 };
 
@@ -97,13 +97,7 @@ void CondenserCom::sendSensorPulse(){
   //Aquí se manda el pulso
 }
 
-void CondenserCom::when_event(uint8_t TYPE, float values_to_send[N_DATA]) {
-  //Este método solo debe habilitarse si el lock está abierto
-  if (esp_busy) {
-    Serial.println("Lock is active, not sending command");
-    return;
-  }
-  
+void CondenserCom::when_event(uint8_t TYPE, float values_to_send[N_DATA]) {  
   //Este método enviar los datos al ESP32 cuando se detecta un evento
   p.get_time(); //Obtener fecha y hora sobre p
   uint16_t len;
@@ -222,6 +216,8 @@ bool CondenserCom::wait_for_ack(uint8_t expected_cmd){
   return false;
 }
 
+
+
 void CondenserCom::handle_interruption(bool take_photo, float values[N_DATA]){
   if (take_photo){
     when_event(BIRD, values);
@@ -235,36 +231,51 @@ void CondenserCom::report_boot(float values[N_DATA]){
   when_event(BOOT, values);
 }
 
-
-void CondenserCom::safety_lock_timeout(){
-  if (esp_busy && (millis() - esp_busy_since > ESP_BUSY_TIMEOUT)) {
-    esp_busy = false;  // liberación de emergencia
-  }
+// Retorna horas acumuladas desde inicio del año (aprox).
+// Usar solo para deltas: last = get_rtc_hours(), elapsed = get_rtc_hours() - last.
+uint32_t CondenserCom::get_rtc_hours() {
+  p.get_time();
+  // 744 = 31*24 — sobreestimación uniforme del mes; válida para calcular diferencias
+  return (uint32_t)p.month * 744 + (uint32_t)p.day * 24 + (uint32_t)p.hour;
 }
+
+
 
 void CondenserCom::recieve_commands(){
   if(link.available()){
     uint16_t index = 0;
-    uint8_t ts[6]; //Timestamp
+    uint16_t ts[6]; //Timestamp
     uint8_t cmd; //Qué comando llegó
 
     //Primero lee el timestamp
-    index = link.rxObj(ts, index);
+    index = link.rxObj(ts, index, sizeof(ts));
 
     //Ahora lee el comando
     index = link.rxObj(cmd, index);
     switch (cmd){
+      case CMD_HELLO: {
+        //Lee el subcomando
+        uint8_t subcommand;
+        index = link.rxObj(subcommand, index);
 
-      case CMD_LOCKARDUINO: {
-        esp_busy_since = millis();
-        esp_busy = true;
-        Serial.println("locking arduino serial...");
+        switch (subcommand){
+          case SET_TIME:
+            p.year = ts[0];
+            p.month = ts[1];
+            p.day = ts[2];
+            p.hour = ts[3];
+            p.minute = ts[4];
+            p.second = ts[5];
+            p.set_time();
+            break;
+
+          default:
+            Serial.println("Wrong hello mode");
+            break;
+        }
+        break;
       }
 
-      case CMD_UNLOCKARDUINO: {
-        esp_busy = false;
-        Serial.println("UNlocking arduino serial...");
-      }
       // Código si no coincide con ningún "case
       default:
         Serial.println("Wrong Command");
