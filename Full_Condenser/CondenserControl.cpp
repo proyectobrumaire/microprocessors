@@ -56,6 +56,9 @@ void CondenserControl::iniciar_control(){
   analogWrite (pins.lpwm, 0);
   peltier_on = false;
 
+  // Sensor lluvia
+  pinMode(pins.rain_digital, INPUT);
+
   //Prender los ventiladores
   PrenderVentiladorPrincipal();
   PrenderVentiladorChimenea();
@@ -65,6 +68,7 @@ void CondenserControl::iniciar_control(){
   t_ctrl_prev = millis();
   //Reset posiciones de los servos
   delay(1000);
+  reset_plato_pos();
 }
 
 void CondenserControl::leer_sensores_y_controlar(){
@@ -118,9 +122,7 @@ void CondenserControl::leer_sensores_y_controlar(){
     peltier_on = true;
     pwm = 255;
     analogWrite(pins.rpwm,(int)pwm); //Ejecutar el control
-    Serial.print("eche is"); Serial.println("pwm");
   }
-  Serial.print("eche is"); Serial.println("pwm");
 
   unsigned long t_now = millis();
   if (is_ventilador_chimenea_on) {
@@ -291,9 +293,6 @@ void CondenserControl::ejecutar_volcado() {
   delay(2000);
 
   volcar_plato_y_renovar();
-  delay(3000);
-  reset_plato_pos();
-  delay(1000);
 
   // Volver a operación normal
   PrenderVentiladorPrincipal();
@@ -304,32 +303,56 @@ void CondenserControl::ejecutar_volcado() {
 
 void CondenserControl::volcar_plato_y_renovar() {
   Serial.println("Volcando el plato del bebedero");
-  //Libera el seguro
+  
   seguro.write(0);
-  //1 Plato en posición 0
+  delay(3000);
+  
   volcado.attach(pins.m2);
   volcado.write(90);
-  delay(2000);
+  delay(10000);
+  volcado.write(0);
+  delay(3000);
   volcado.detach();
-  //cierra la válvula
+  
+  valvula.write(90);
+  delay(3000);
   valvula.write(0);
-
+  seguro.write(90);
 }
 
 
 
 void CondenserControl::reset_plato_pos() {
   Serial.println("Colocando el plato del bebedero");
-  //Libera el seguro
   seguro.write(0);
-  //Posiciona el plato
   volcado.attach(pins.m2);
   volcado.write(0);
+  delay(2000);
   volcado.detach();
-  //cierra la válvula
+  seguro.write(90);
   valvula.write(0);
 }
 
+
+void CondenserControl::updateRain() {
+  int val = analogRead(pins.rain_analog);
+
+  RainState prev = rainState;
+  switch (rainState) {
+    case RAIN_DRY:
+      if (val < RAIN_DRY_THRESHOLD)  rainState = RAIN_RAINING;
+      break;
+    case RAIN_RAINING:
+      if      (val < RAIN_SOAK_THRESHOLD) rainState = RAIN_SOAKED;
+      else if (val >= RAIN_DRY_THRESHOLD) rainState = RAIN_DRY;
+      break;
+    case RAIN_SOAKED:
+      if      (val >= RAIN_DRY_THRESHOLD)  rainState = RAIN_DRY;
+      else if (val >= RAIN_SOAK_THRESHOLD) rainState = RAIN_RAINING;
+      break;
+  }
+  (void)prev;
+}
 
 //Helpers
 //Clacula el punto de rocío

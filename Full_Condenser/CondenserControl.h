@@ -16,7 +16,7 @@ class CondenserControl {
     public:
         struct  Pins
         {
-            //DHT   
+            //DHT
             uint8_t dht_pin1, dht_pin2;
             // Termocuplas
             uint8_t max_d01, max_cs1, max_clk1, max_d02, max_cs2, max_clk2;
@@ -30,16 +30,22 @@ class CondenserControl {
             uint8_t otrosensor;
             //motores
             uint8_t m1, m2, mv;
+            //lluvia
+            uint8_t rain_analog, rain_digital;
         };
 
         static const size_t N_DATA_CRL = 11;
 
         bool peltier_on;
 
+        enum RainState : uint8_t { RAIN_DRY, RAIN_RAINING, RAIN_SOAKED };
+        RainState rainState = RAIN_DRY;
+
         explicit CondenserControl(const Pins& p); //constructor
         void iniciar_control();
         void leer_sensores_y_controlar();
-        
+        void updateRain();
+
         void promediar(float out[N_DATA_CRL]);
         void ejecutar_volcado();
         //inline
@@ -125,6 +131,9 @@ class CondenserControl {
         float   W1_sum = 0.0;
         int num_samples = 0;
         
+        static constexpr int RAIN_DRY_THRESHOLD  = 800;
+        static constexpr int RAIN_SOAK_THRESHOLD = 200;
+
         unsigned long t_ctrl_prev=0;
         //PI
         float kp;

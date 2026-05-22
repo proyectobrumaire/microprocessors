@@ -50,7 +50,10 @@ public:
     PERIODIC = 0x82,
     PELTIER_ON = 0x83,
     PELTIER_OFF = 0x84,
-    VOLCADO = 0x85
+    VOLCADO = 0x85,
+    RAIN_START = 0x86,
+    RAIN_SOAK  = 0x87,
+    RAIN_STOP  = 0x88
   };
 
 

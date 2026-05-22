@@ -12,8 +12,8 @@ const int tiempoLectura = 1;      // Intervalo de lectura y control en segundos
 int tiempoSensor = 0; //Tiempo actual del sensor
 
 /*=========VOLCADO=========*/
-const uint16_t volcado_interval_horas = 24;  // Cada cuántas horas volcar el plato
-uint32_t last_volcado_hours = 0;
+const unsigned long volcado_interval_min = 2UL;  // Cada cuántos minutos volcar el plato (1440 = 24h)
+unsigned long last_volcado_ms = 0;
 
 
 /*=========CONTROL=========*/
@@ -39,12 +39,14 @@ CondenserControl::Pins ctrlCom{
   //Sensor  ACS712
   A3,
   //motores (M1, M2, Mv)
-  10, 11, 13        
+  10, 11, 13,
+  //lluvia (rain_analog, rain_digital)
+  A2, 8
 };
 
 //Leds -> 
-//Rain A0 ->
-//Rain D0 ->
+//Rain A0 -> A2
+//Rain D0 -> D8
 
 //Instanciar las clases
 CondenserCom com(pinsCom);
@@ -52,6 +54,7 @@ CondenserControl ctrl (ctrlCom);
 
 float sensores_promedio[N_Sensores];
 bool peltier_actual;
+CondenserControl::RainState rainPrev = CondenserControl::RAIN_DRY;
 
 
 void setup(void) {
@@ -71,7 +74,7 @@ void setup(void) {
   //com.report_boot(sensores_promedio); //Repotar el boot
   com.when_event(CondenserCom::BOOT, sensores_promedio);
   peltier_actual = ctrl.peltier_on;
-  last_volcado_hours = com.get_rtc_hours();
+  last_volcado_ms = millis();
 }
 
 
@@ -87,19 +90,26 @@ void loop(void) {
     Serial.println("Flag from Timer Taken");
     ctrl.promediar(sensores_promedio);
     com.clearRtcTimerFlags();
+
+    ctrl.updateRain();
+    if (ctrl.rainState != rainPrev) {
+      uint8_t ev = 0;
+      if      (ctrl.rainState == CondenserControl::RAIN_RAINING && rainPrev == CondenserControl::RAIN_DRY) ev = CondenserCom::RAIN_START;
+      else if (ctrl.rainState == CondenserControl::RAIN_SOAKED)                                           ev = CondenserCom::RAIN_SOAK;
+      else if (ctrl.rainState == CondenserControl::RAIN_DRY)                                              ev = CondenserCom::RAIN_STOP;
+      if (ev) com.when_event(ev, sensores_promedio);
+      rainPrev = ctrl.rainState;
+    }
+
     com.when_event(CondenserCom::PERIODIC, sensores_promedio);
     //com.handle_interruption(false, sensores_promedio); //sin foto
 
     // Verificar si es hora de volcar
-    uint32_t current_hours = com.get_rtc_hours();
-    uint32_t elapsed = (current_hours >= last_volcado_hours)
-                       ? (current_hours - last_volcado_hours)
-                       : (current_hours + 744 - last_volcado_hours);  // rollover de mes
-    if (elapsed >= volcado_interval_horas) {
+    if ((millis() - last_volcado_ms) >= volcado_interval_min * 60000UL) {
       Serial.println("Hora de volcar el plato");
       ctrl.ejecutar_volcado();
       com.when_event(CondenserCom::VOLCADO, sensores_promedio);
-      last_volcado_hours = com.get_rtc_hours();
+      last_volcado_ms = millis();
     }
   }
 
