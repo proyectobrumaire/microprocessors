@@ -2,6 +2,7 @@
 
 #include "Communication.h"
 #include "CondenserControl.h"
+#include "Debug.h"
 
 const int N_Sensores = 11;
 
@@ -39,14 +40,10 @@ CondenserControl::Pins ctrlCom{
   //Sensor  ACS712
   A3,
   //motores (M1, M2, Mv)
-  10, 11, 13,
-  //lluvia (rain_analog, rain_digital)
-  A2, 8
+  10, 11, 13
 };
 
 //Leds -> 
-//Rain A0 -> A2
-//Rain D0 -> D8
 
 //Instanciar las clases
 CondenserCom com(pinsCom);
@@ -54,20 +51,21 @@ CondenserControl ctrl (ctrlCom);
 
 float sensores_promedio[N_Sensores];
 bool peltier_actual;
-CondenserControl::RainState rainPrev = CondenserControl::RAIN_DRY;
 
 
 void setup(void) {
-  Serial.begin(9600);   //Debugging...
-  Serial.print("booting arduino...");
-  Serial.println("done");
+#if DEBUG
+  Serial.begin(115200);   //Debugging por USB
+#endif
+  DBG("booting arduino...");
+  DBGLN("done");
 
   ctrl.set_PI_parameters(kp, ki, maxIntegracion);
   ctrl.iniciar_control();
   com.iniciar_comunicaciones();
  
   delay(1000);
-  Serial.println("Sistema listo.");
+  DBGLN("Sistema listo.");
 
   ctrl.leer_sensores_y_controlar();
   ctrl.promediar(sensores_promedio); //Primera lectura
@@ -87,26 +85,16 @@ void loop(void) {
   
   //Manejar la interrupción del timer
  if (com.takeTimerFlag()) {
-    Serial.println("Flag from Timer Taken");
+    DBGLN("Flag from Timer Taken");
     ctrl.promediar(sensores_promedio);
     com.clearRtcTimerFlags();
-
-    ctrl.updateRain();
-    if (ctrl.rainState != rainPrev) {
-      uint8_t ev = 0;
-      if      (ctrl.rainState == CondenserControl::RAIN_RAINING && rainPrev == CondenserControl::RAIN_DRY) ev = CondenserCom::RAIN_START;
-      else if (ctrl.rainState == CondenserControl::RAIN_SOAKED)                                           ev = CondenserCom::RAIN_SOAK;
-      else if (ctrl.rainState == CondenserControl::RAIN_DRY)                                              ev = CondenserCom::RAIN_STOP;
-      if (ev) com.when_event(ev, sensores_promedio);
-      rainPrev = ctrl.rainState;
-    }
 
     com.when_event(CondenserCom::PERIODIC, sensores_promedio);
     //com.handle_interruption(false, sensores_promedio); //sin foto
 
     // Verificar si es hora de volcar
     if ((millis() - last_volcado_ms) >= volcado_interval_min * 60000UL) {
-      Serial.println("Hora de volcar el plato");
+      DBGLN("Hora de volcar el plato");
       ctrl.ejecutar_volcado();
       com.when_event(CondenserCom::VOLCADO, sensores_promedio);
       last_volcado_ms = millis();
@@ -115,8 +103,8 @@ void loop(void) {
 
   //Manejar la interrupción del sensor
   if (com.takeSensorFlag()) {
-    //Serial.println(String(com.lastSensorFlagRaisen));
-    Serial.println("Flag from Sensor Taken");
+    //DBGLN(String(com.lastSensorFlagRaisen));
+    DBGLN("Flag from Sensor Taken");
     ctrl.promediar(sensores_promedio);
     //com.handle_interruption(true, sensores_promedio); //con foto
     com.when_event(CondenserCom::BIRD, sensores_promedio);
@@ -124,8 +112,8 @@ void loop(void) {
 
   //Mirar si la celda peltier cambió de estado
   if (ctrl.peltier_on^peltier_actual) {
-    //Serial.println(String(com.lastSensorFlagRaisen));
-    Serial.println("Flag from Peltier Control Taken");
+    //DBGLN(String(com.lastSensorFlagRaisen));
+    DBGLN("Flag from Peltier Control Taken");
     ctrl.promediar(sensores_promedio);
     //com.handle_interruption(true, sensores_promedio); //con foto
     uint8_t ev = ctrl.peltier_on ? CondenserCom::PELTIER_ON : CondenserCom::PELTIER_OFF;

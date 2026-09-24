@@ -1,4 +1,5 @@
 #include "CondenserControl.h"
+#include "Debug.h"
 #include <math.h>
 
 //constructor
@@ -15,8 +16,8 @@ CondenserControl::CondenserControl(const CondenserControl::Pins& p)
 
 void CondenserControl::iniciar_control(){
   
-  if (!tc1.begin()) { Serial.println("ERROR termocupla 1."); while (1) delay(10); }
-  if (!tc2.begin()) { Serial.println("ERROR termocupla 2."); while (1) delay(10); }
+  if (!tc1.begin()) { DBGLN("ERROR termocupla 1."); while (1) delay(10); }
+  if (!tc2.begin()) { DBGLN("ERROR termocupla 2."); while (1) delay(10); }
   dht1.begin();
   dht2.begin();
   balanzaInicial(); //Inicia la balanza
@@ -56,9 +57,6 @@ void CondenserControl::iniciar_control(){
   analogWrite (pins.lpwm, 0);
   peltier_on = false;
 
-  // Sensor lluvia
-  pinMode(pins.rain_digital, INPUT);
-
   //Prender los ventiladores
   PrenderVentiladorPrincipal();
   PrenderVentiladorChimenea();
@@ -89,19 +87,25 @@ void CondenserControl::leer_sensores_y_controlar(){
   dht2.humidity().getEvent(&event);
   humedad2 = event.relative_humidity;
 
+  //dt se actualiza en todas las ramas: si el PI estuvo inactivo (no viable, sensor en NaN o volcado)
+  //no debe integrar de golpe todo ese tiempo. Se limita a dt_max_ctrl como protección adicional.
+  unsigned long t_ctrl_actual = millis();
+  float dt = (t_ctrl_actual - t_ctrl_prev)/1000.0;  // en segundos (con decimal)
+  t_ctrl_prev = t_ctrl_actual;
+  if (dt > dt_max_ctrl) dt = dt_max_ctrl;
+
   if (!isnan(tempAmbiente2) && !isnan(humedad2) && !isnan(c12)) {
     puntoRocio = calcularPuntoRocio(tempAmbiente2, humedad2);
-    //Condición de vabilidad
-    if ((tempAmbiente2 >= puntoRocio - peltier_temp_amb_max)){
+    //Condición de vabilidad (con histéresis para evitar oscilar en el umbral)
+    float umbral_viabilidad = puntoRocio - peltier_temp_amb_max;
+    if (!peltier_on) umbral_viabilidad -= viabilidad_histeresis;
+    if (tempAmbiente2 >= umbral_viabilidad){
       pwm = 0;
       analogWrite(pins.rpwm, (int)pwm);
       peltier_on = false;
-      Serial.println("No se puede condensar debido a las condiciones ambientales");
+      DBGLN("No se puede condensar debido a las condiciones ambientales");
     } else {
       error = puntoRocio - c12;
-      unsigned long t_ctrl_actual = millis();
-      float dt = (t_ctrl_actual - t_ctrl_prev)/1000.0;  // en segundos (con decimal)
-      t_ctrl_prev = t_ctrl_actual;
 
       // Evitar acumulación excesiva (anti-windup)
       errorAcumulado += error * dt;
@@ -117,7 +121,7 @@ void CondenserControl::leer_sensores_y_controlar(){
     }
 
   } else {
-    Serial.println("No es posible ejecutar el control ....Encendiendo celda");
+    DBGLN("No es posible ejecutar el control ....Encendiendo celda");
     //peltier_on = false;
     peltier_on = true;
     pwm = 255;
@@ -142,8 +146,11 @@ void CondenserControl::leer_sensores_y_controlar(){
 
 
   //Aquí se debe modificar peso_agua. Evitar método bloqueante
-  if (is_balanza) {
-    peso_agua = balanza.get_units(5);
+  // Lectura sin bloqueo: HX711::read() espera indefinidamente si el chip no está listo
+  // (p.ej. balanza desconectada). Si no hay dato nuevo se conserva el último peso;
+  // W1 ya se promedia en la ventana de reporte.
+  if (is_balanza && balanza.is_ready()) {
+    peso_agua = balanza.get_units(1);
   }
 
   float suma = 0;
@@ -171,21 +178,21 @@ void CondenserControl::leer_sensores_y_controlar(){
   num_samples++;
   interrupts();
 
-  Serial.print("Temp Ambiente: "); Serial.println(tempAmbiente2);
-  Serial.print("Humedad: "); Serial.println(humedad2);
-  Serial.print("Temp Caja Interna: "); Serial.println(tempAmbiente1);
-  Serial.print("Humedad Interna: "); Serial.println(humedad1);
-  Serial.print("Temp Placa Fria 1: "); Serial.println(c1);
-  Serial.print("Temp Placa Fria 2: "); Serial.println(c2);
-  Serial.print("Temp Media Fria: "); Serial.println(c12);
-  Serial.print("Punto Rocío: "); Serial.println(puntoRocio);
-  Serial.print("Error: "); Serial.println(error);
-  Serial.print("Error Acumulado: "); Serial.println(errorAcumulado);
-  Serial.print("Temp Objetivo: "); Serial.println(tempObjetivo);
-  Serial.print("PWM aplicado: "); Serial.println(pwm);
-  Serial.print("Correinte 4: "); Serial.println(voltajeCorrienteFiltrada);
-  Serial.print("Peso : "); Serial.println(peso_agua);
-  Serial.println("-----------");
+  DBG("Temp Ambiente: "); DBGLN(tempAmbiente2);
+  DBG("Humedad: "); DBGLN(humedad2);
+  DBG("Temp Caja Interna: "); DBGLN(tempAmbiente1);
+  DBG("Humedad Interna: "); DBGLN(humedad1);
+  DBG("Temp Placa Fria 1: "); DBGLN(c1);
+  DBG("Temp Placa Fria 2: "); DBGLN(c2);
+  DBG("Temp Media Fria: "); DBGLN(c12);
+  DBG("Punto Rocío: "); DBGLN(puntoRocio);
+  DBG("Error: "); DBGLN(error);
+  DBG("Error Acumulado: "); DBGLN(errorAcumulado);
+  DBG("Temp Objetivo: "); DBGLN(tempObjetivo);
+  DBG("PWM aplicado: "); DBGLN(pwm);
+  DBG("Correinte 4: "); DBGLN(voltajeCorrienteFiltrada);
+  DBG("Peso : "); DBGLN(peso_agua);
+  DBGLN("-----------");
 }
 
 
@@ -200,6 +207,8 @@ void CondenserControl::reset_acumuladores() {
 
 void CondenserControl::promediar(float out[N_DATA_CRL]) {
   //devuelve en el parámetro (out) el resultado de haber promediado los acumuladores en la ventana
+  //Sin muestras nuevas se conserva el último promedio válido (evita reportar NaN)
+  if (num_samples == 0) return;
   out[0]  = safe_avg(T1_sum, num_samples);
   out[1]  = safe_avg(T2_sum, num_samples);
   out[2]  = safe_avg(T3_sum, num_samples);
@@ -232,13 +241,13 @@ void CondenserControl::ApagarVentiladorChimenea(){
 }
 
 void CondenserControl::balanzaInicial() {
-  Serial.println("Iniciando Balanza...");
-  Serial.println("Iniciando Balanza...");
+  DBGLN("Iniciando Balanza...");
+  DBGLN("Iniciando Balanza...");
   balanza.begin(pins.dout, pins.clk);
 
   if (!balanza.wait_ready_timeout(1000)){
     is_balanza = false;
-    Serial.println("Balanza no encontrada");
+    DBGLN("Balanza no encontrada");
     return;
   }
 
@@ -259,12 +268,12 @@ void CondenserControl::balanzaInicial() {
     guardarCalibracion(offset_promedio, SCALE_DEFAULT);
     
 
-    Serial.println("Tara inicial completada y almacenada.");
-    Serial.print("Offset promedio guardado: ");
-    Serial.println(offset_promedio);
-    Serial.print("Escala guardada: ");
-    Serial.println(SCALE_DEFAULT, 3);
-    Serial.println();
+    DBGLN("Tara inicial completada y almacenada.");
+    DBG("Offset promedio guardado: ");
+    DBGLN(offset_promedio);
+    DBG("Escala guardada: ");
+    DBGLN(SCALE_DEFAULT, 3);
+    DBGLN();
 
   } else {
     long offset;
@@ -273,36 +282,36 @@ void CondenserControl::balanzaInicial() {
     balanza.set_scale(escala);
     balanza.set_offset(offset);
 
-    Serial.println("Calibracion cargada desde EEPROM:");
-    Serial.print("Offset: ");
-    Serial.println(offset);
-    Serial.print("Escala: ");
-    Serial.println(escala, 3);
-    Serial.println("Listo para medir");
+    DBGLN("Calibracion cargada desde EEPROM:");
+    DBG("Offset: ");
+    DBGLN(offset);
+    DBG("Escala: ");
+    DBGLN(escala, 3);
+    DBGLN("Listo para medir");
   }    
 }
 
 void CondenserControl::ejecutar_volcado() {
-  Serial.println("Iniciando secuencia de volcado");
+  DBGLN("Iniciando secuencia de volcado");
 
   // Apagar actuadores antes del movimiento mecánico
   ApagarVentiladorPrincipal();
   ApagarVentiladorChimenea();
-  analogWrite(pins.rpwm, 0);
-  peltier_on = false;
+  analogWrite(pins.rpwm, 0); // pausa forzada: no se toca peltier_on, ya se reporta como VOLCADO
   delay(2000);
 
   volcar_plato_y_renovar();
 
   // Volver a operación normal
   PrenderVentiladorPrincipal();
-  PrenderVentiladorChimenea();
+  // Restaurar la chimenea al estado que espera su ciclo (15 s on / 120 s off)
+  if (is_ventilador_chimenea_on) PrenderVentiladorChimenea();
   errorAcumulado = 0.0;  // evitar windup acumulado durante la pausa
-  Serial.println("Volcado completado — reanudando control");
+  DBGLN("Volcado completado — reanudando control");
 }
 
 void CondenserControl::volcar_plato_y_renovar() {
-  Serial.println("Volcando el plato del bebedero");
+  DBGLN("Volcando el plato del bebedero");
   
   seguro.write(0);
   delay(3000);
@@ -323,7 +332,7 @@ void CondenserControl::volcar_plato_y_renovar() {
 
 
 void CondenserControl::reset_plato_pos() {
-  Serial.println("Colocando el plato del bebedero");
+  DBGLN("Colocando el plato del bebedero");
   seguro.write(0);
   volcado.attach(pins.m2);
   volcado.write(0);
@@ -333,26 +342,6 @@ void CondenserControl::reset_plato_pos() {
   valvula.write(0);
 }
 
-
-void CondenserControl::updateRain() {
-  int val = analogRead(pins.rain_analog);
-
-  RainState prev = rainState;
-  switch (rainState) {
-    case RAIN_DRY:
-      if (val < RAIN_DRY_THRESHOLD)  rainState = RAIN_RAINING;
-      break;
-    case RAIN_RAINING:
-      if      (val < RAIN_SOAK_THRESHOLD) rainState = RAIN_SOAKED;
-      else if (val >= RAIN_DRY_THRESHOLD) rainState = RAIN_DRY;
-      break;
-    case RAIN_SOAKED:
-      if      (val >= RAIN_DRY_THRESHOLD)  rainState = RAIN_DRY;
-      else if (val >= RAIN_SOAK_THRESHOLD) rainState = RAIN_RAINING;
-      break;
-  }
-  (void)prev;
-}
 
 //Helpers
 //Clacula el punto de rocío

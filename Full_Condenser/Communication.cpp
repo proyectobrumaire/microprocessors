@@ -1,6 +1,7 @@
 #include "Arduino.h"
 #include "HardwareSerial.h"
 #include "Communication.h"
+#include "Debug.h"
 // Definición del estático
 CondenserCom* CondenserCom::s_self = nullptr;
 
@@ -103,28 +104,30 @@ void CondenserCom::when_event(uint8_t TYPE, float values_to_send[N_DATA]) {
   uint16_t len;
   uint8_t cmd;
   uint8_t ev;
-  uint16_t ts[6] = {(uint16_t)p.year, (uint16_t)p.month, (uint16_t)p.day, (uint16_t)p.hour, (uint16_t)p.minute, (uint16_t)p.second};     // YY,MM,DD,hh,mm,ss
+  // p.year = year_base (guardado en la RAM del RTC) + contador de 2 bits: devuelve 26 si se
+  // configuró con 26 (SET_TIME de la app) o 2026 si se configuró con 2026. % 100 normaliza a YY.
+  uint16_t ts[6] = {(uint16_t)(p.year % 100), (uint16_t)p.month, (uint16_t)p.day, (uint16_t)p.hour, (uint16_t)p.minute, (uint16_t)p.second};     // YY,MM,DD,hh,mm,ss
   
   char ts_string[20];
   snprintf(ts_string, sizeof(ts_string),
     "%02u-%02u-%02uT%02u-%02u-%02u",
     ts[0], ts[1], ts[2], ts[3], ts[4], ts[5]);
   
-  Serial.println("Sending event at time: ");
-  Serial.println(ts_string);
+  DBGLN("Sending event at time: ");
+  DBGLN(ts_string);
     
   //0) SI E UN PÁJARO TOMA LA FOTO DE UNA
   if (TYPE == BIRD){
-    Serial.print("Sending Take photo command at: ");
-    Serial.println(ts_string);
+    DBG("Sending Take photo command at: ");
+    DBGLN(ts_string);
     cmd = CMD_TAKE_PHOTO;
     len = 0;
     len = link.txObj(ts,  len, sizeof(ts));
     len = link.txObj(cmd, len);
     link.sendData(len); //Enviar el evento
     if (!wait_for_ack(cmd)) {
-      Serial.println("Exiting comand [take photo] since bad or no response");
-      Serial.println("Nah...Sending shit anyway");
+      DBGLN("Exiting comand [take photo] since bad or no response");
+      DBGLN("Nah...Sending shit anyway");
       //return;
     }
     
@@ -139,8 +142,8 @@ void CondenserCom::when_event(uint8_t TYPE, float values_to_send[N_DATA]) {
   len = link.txObj(ev,  len);
   link.sendData(len); //Enviar el evento
   if (!wait_for_ack(cmd)) {
-    Serial.println("Exiting comand [save event] since bad or no response");
-    Serial.println("Nah...Sending shit anyway");
+    DBGLN("Exiting comand [save event] since bad or no response");
+    DBGLN("Nah...Sending shit anyway");
     //return;
   }
   
@@ -157,16 +160,16 @@ void CondenserCom::when_event(uint8_t TYPE, float values_to_send[N_DATA]) {
     link.sendData(len); //Enviar el evento
     if (i == 0){
       if (!wait_for_ack(cmd)) {
-        Serial.println("Exiting comand [save data] since bad or no response");
-        Serial.println("Nah...Sending shit anyway");
+        DBGLN("Exiting comand [save data] since bad or no response");
+        DBGLN("Nah...Sending shit anyway");
         keep_acking = false;
         //break;
       }
     } else {
       if (keep_acking){
         if (!wait_for_ack(cmd)) {
-          Serial.println("Exiting comand [save data] since bad or no response");
-          Serial.println("Nah...Sending shit anyway");
+          DBGLN("Exiting comand [save data] since bad or no response");
+          DBGLN("Nah...Sending shit anyway");
           //break;
         }
       }
@@ -179,7 +182,7 @@ void CondenserCom::when_event(uint8_t TYPE, float values_to_send[N_DATA]) {
 bool CondenserCom::wait_for_ack(uint8_t expected_cmd){
   uint32_t start_wait = millis();
   uint32_t timeout = 10000;
-  Serial.println("Waiting...");
+  DBGLN("Waiting...");
   while ((millis() - start_wait) < timeout){
     if(link.available()) {
       uint16_t idx = 0;
@@ -198,21 +201,21 @@ bool CondenserCom::wait_for_ack(uint8_t expected_cmd){
       idx = link.rxObj(status, idx); //status // Status (1 = OK, 0 = ERROR)
       if (cmd == expected_cmd){ 
         if (status){
-          Serial.print("ACK recibido at time...");
-          Serial.println(ts_string);
+          DBG("ACK recibido at time...");
+          DBGLN(ts_string);
           return true;
         } else{
-          Serial.println("Comando respondido - No ejecutado");
+          DBGLN("Comando respondido - No ejecutado");
           return false;
         }
       } else {
-        Serial.print("ACK de otro comando...");
+        DBG("ACK de otro comando...");
         return false;
       }
     }
     delay(1);
   }
-  Serial.println("Timeout for ack reached");
+  DBGLN("Timeout for ack reached");
   return false;
 }
 
@@ -270,7 +273,7 @@ void CondenserCom::recieve_commands(){
             break;
 
           default:
-            Serial.println("Wrong hello mode");
+            DBGLN("Wrong hello mode");
             break;
         }
         break;
@@ -278,7 +281,7 @@ void CondenserCom::recieve_commands(){
 
       // Código si no coincide con ningún "case
       default:
-        Serial.println("Wrong Command");
+        DBGLN("Wrong Command");
         break;
     }
   }

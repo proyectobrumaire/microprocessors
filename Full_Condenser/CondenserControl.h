@@ -30,21 +30,15 @@ class CondenserControl {
             uint8_t otrosensor;
             //motores
             uint8_t m1, m2, mv;
-            //lluvia
-            uint8_t rain_analog, rain_digital;
         };
 
         static const size_t N_DATA_CRL = 11;
 
         bool peltier_on;
 
-        enum RainState : uint8_t { RAIN_DRY, RAIN_RAINING, RAIN_SOAKED };
-        RainState rainState = RAIN_DRY;
-
         explicit CondenserControl(const Pins& p); //constructor
         void iniciar_control();
         void leer_sensores_y_controlar();
-        void updateRain();
 
         void promediar(float out[N_DATA_CRL]);
         void ejecutar_volcado();
@@ -82,8 +76,9 @@ class CondenserControl {
         //Seguridad placas peltier
         static constexpr int max_peltier_op = 100;
         static constexpr float peltier_delta_T = -0.0745; //Grados por unidad pwm     
-        float peltier_temp_amb_max;   
+        float peltier_temp_amb_max;
         float peltier_pwm_max;
+        static constexpr float viabilidad_histeresis = 1.0; //Grados para re-habilitar la condensación
 
         //Servomotores
         Servo volcado;
@@ -130,11 +125,9 @@ class CondenserControl {
         float   I4_sum = 0.0;
         float   W1_sum = 0.0;
         int num_samples = 0;
-        
-        static constexpr int RAIN_DRY_THRESHOLD  = 800;
-        static constexpr int RAIN_SOAK_THRESHOLD = 200;
 
         unsigned long t_ctrl_prev=0;
+        static constexpr float dt_max_ctrl = 2.0; //Máximo dt (s) que integra el PI en un ciclo
         //PI
         float kp;
         float ki;
