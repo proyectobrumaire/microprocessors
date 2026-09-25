@@ -18,6 +18,10 @@ void CondenserControl::iniciar_control(){
   
   if (!tc1.begin()) { DBGLN("ERROR termocupla 1."); while (1) delay(10); }
   if (!tc2.begin()) { DBGLN("ERROR termocupla 2."); while (1) delay(10); }
+  // Solo la termocupla abierta cuenta como falla. Las puntas tocan la placa y el MAX31855
+  // marca "corto a GND" de forma intermitente (ciclo externo de ~29 s), pero la lectura es válida.
+  tc1.setFaultChecks(MAX31855_FAULT_OPEN);
+  tc2.setFaultChecks(MAX31855_FAULT_OPEN);
   dht1.begin();
   dht2.begin();
   balanzaInicial(); //Inicia la balanza
@@ -184,6 +188,13 @@ void CondenserControl::leer_sensores_y_controlar(){
   DBG("Humedad Interna: "); DBGLN(humedad1);
   DBG("Temp Placa Fria 1: "); DBGLN(c1);
   DBG("Temp Placa Fria 2: "); DBGLN(c2);
+#if DEBUG
+  // Diagnóstico termocuplas: 0 = OK, 1 = abierta, 2 = corto a GND, 4 = corto a VCC (pueden sumarse).
+  // "Int" es la temperatura interna del MAX31855: si es razonable, la comunicación SPI funciona.
+  // Nota: readError() hace una lectura SPI nueva, no la misma de readCelsius().
+  DBG("TC1 err: "); DBG(tc1.readError()); DBG("  Int: "); DBG(tc1.readInternal());
+  DBG("  |  TC2 err: "); DBG(tc2.readError()); DBG("  Int: "); DBGLN(tc2.readInternal());
+#endif
   DBG("Temp Media Fria: "); DBGLN(c12);
   DBG("Punto Rocío: "); DBGLN(puntoRocio);
   DBG("Error: "); DBGLN(error);
