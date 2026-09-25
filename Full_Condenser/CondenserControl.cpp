@@ -44,6 +44,7 @@ void CondenserControl::iniciar_control(){
   pinMode(pins.m1, OUTPUT);
   pinMode(pins.m2, OUTPUT);
   pinMode(pins.mv, OUTPUT);
+  seguro.write(SEGURO_TRABADO);  //antes de attach: por defecto Servo arranca en 90° (suelto)
   seguro.attach(pins.m1);
   valvula.attach(pins.mv);
 
@@ -324,7 +325,7 @@ void CondenserControl::ejecutar_volcado() {
 void CondenserControl::volcar_plato_y_renovar() {
   DBGLN("Volcando el plato del bebedero");
   
-  seguro.write(0);
+  seguro.write(SEGURO_SUELTO);
   delay(3000);
   
   volcado.attach(pins.m2);
@@ -337,19 +338,19 @@ void CondenserControl::volcar_plato_y_renovar() {
   valvula.write(90);
   delay(3000);
   valvula.write(0);
-  seguro.write(90);
+  seguro.write(SEGURO_TRABADO);
 }
 
 
 
 void CondenserControl::reset_plato_pos() {
   DBGLN("Colocando el plato del bebedero");
-  seguro.write(0);
+  seguro.write(SEGURO_SUELTO);
   volcado.attach(pins.m2);
   volcado.write(0);
   delay(2000);
   volcado.detach();
-  seguro.write(90);
+  seguro.write(SEGURO_TRABADO);
   valvula.write(0);
 }
 

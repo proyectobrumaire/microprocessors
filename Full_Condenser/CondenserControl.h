@@ -84,6 +84,9 @@ class CondenserControl {
         Servo volcado;
         Servo seguro;
         Servo valvula;
+        //Ángulos del seguro verificados en hardware (seguro_test)
+        static constexpr int SEGURO_TRABADO = 0;
+        static constexpr int SEGURO_SUELTO  = 90;
         void volcar_plato_y_renovar();
         void reset_plato_pos();
 
