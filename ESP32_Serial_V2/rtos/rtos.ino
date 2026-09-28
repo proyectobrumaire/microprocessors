@@ -520,6 +520,9 @@ esp_err_t set_time_handler(httpd_req_t *req) {
 void startServer() {
   httpd_config_t config = HTTPD_DEFAULT_CONFIG();
   config.server_port = 80;
+  // La pila por defecto (4 KB) no alcanza: un error de lectura de la SD dentro de un handler
+  // (FATFS + ESP_LOGE/vprintf) la desbordaba y reiniciaba el ESP32 a mitad de la respuesta.
+  config.stack_size = STACK_HTTP;
   if (httpd_start(&server, &config) == ESP_OK) {
     // Ruta de configuración (Siempre disponible)
     httpd_uri_t wifi_uri = { .uri = "/wifi", .method = HTTP_POST, .handler = wifi_setup_handler };
