@@ -41,7 +41,25 @@ Código, comentarios y commits en español.
 
 ## Pendientes conocidos
 
+Antes de desplegar en campo:
+- `Debug.h`: `DEBUG 0`.
 - `volcado_interval_min = 2` es valor de prueba; el vaciado solo se evalúa en cada tick del RTC (5 min) y usa `millis()` (se reinicia con cada reset). Para producción: hora fija del día con el RTC.
-- Secuencia de servos del vaciado: hay ventanas en que el plato no está sujeto por ningún servo (soltar seguro antes de conectar volcado; rellenar con el seguro suelto). Propuesta: conectar volcado → soltar → volcar → trabar → desconectar → rellenar. Pendiente probar con el volcado acoplado.
+- Probar la rutina de vaciado con el servo de volcado acoplado (ángulos del volcado sin verificar).
+
+Arduino:
+- Secuencia de servos del vaciado: hay ventanas en que el plato no está sujeto por ningún servo (soltar seguro antes de conectar volcado; rellenar con el seguro suelto). Propuesta: conectar volcado → soltar → volcar → trabar → desconectar → rellenar.
 - Anti-windup: el integral sigue acumulando con el PWM saturado.
-- ESP32: `seq` puede retroceder tras un reset inesperado (proponer +10 al arrancar); `download_file_handler` no libera `SDMutex` si falla el `malloc`; `sendACK` envía basura como timestamp (recibe `ts` como puntero).
+- Pulso del ultrasonido por `millis()` en vez de `delay(60)`.
+
+ESP32:
+- `seq` puede retroceder tras un reset inesperado (proponer +10 al arrancar).
+- Si la cámara falla al iniciar (NACK del sensor por SCCB), queda sin cámara hasta el próximo reset y los ACK siguen diciendo OK. Proponer reintentar el init y reinicializar si falla una captura.
+- Si falla una escritura en la SD (p. ej. `sdmmc_read_blocks failed (0x107)`), no se recupera. Proponer remontar la SD y reintentar.
+- Ambos síntomas aparecen alimentando el ESP32-CAM desde el USB del PC (alimentación débil; el detector de brownout está desactivado en `setup()`). Probar con fuente de 5 V ≥ 2 A.
+
+## Pruebas del ESP32
+
+- `ESP32_Serial_V2/rtos/emulator/test_protocolo.py`: emula al Arduino por serial y verifica cada ACK (cmd, status y timestamp). `--foto` incluye un BIRD; `--host` verifica `log.txt` por HTTP. Escribe eventos de prueba en el `log.txt` real.
+- `arduino_emulator.py`: menú interactivo para disparar eventos a mano.
+- Entorno: `python3 -m venv .venv && .venv/bin/pip install pyserial pySerialTransfer requests` dentro de `emulator/`.
+- Programar el ESP32-CAM: `arduino-cli upload --fqbn esp32:esp32:esp32cam -p /dev/ttyUSB0` (placa con adaptador tipo ESP32-CAM-MB; si es un FTDI suelto, puentear IO0–GND al subir).
