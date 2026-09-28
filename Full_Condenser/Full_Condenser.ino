@@ -69,7 +69,6 @@ void setup(void) {
 
   ctrl.leer_sensores_y_controlar();
   ctrl.promediar(sensores_promedio); //Primera lectura
-  //com.report_boot(sensores_promedio); //Repotar el boot
   com.when_event(CondenserCom::BOOT, sensores_promedio);
   peltier_actual = ctrl.peltier_on;
   last_volcado_ms = millis();
@@ -90,7 +89,6 @@ void loop(void) {
     com.clearRtcTimerFlags();
 
     com.when_event(CondenserCom::PERIODIC, sensores_promedio);
-    //com.handle_interruption(false, sensores_promedio); //sin foto
 
     // Verificar si es hora de volcar
     if ((millis() - last_volcado_ms) >= volcado_interval_min * 60000UL) {
@@ -106,7 +104,6 @@ void loop(void) {
     //DBGLN(String(com.lastSensorFlagRaisen));
     DBGLN("Flag from Sensor Taken");
     ctrl.promediar(sensores_promedio);
-    //com.handle_interruption(true, sensores_promedio); //con foto
     com.when_event(CondenserCom::BIRD, sensores_promedio);
   }
 
@@ -115,7 +112,6 @@ void loop(void) {
     //DBGLN(String(com.lastSensorFlagRaisen));
     DBGLN("Flag from Peltier Control Taken");
     ctrl.promediar(sensores_promedio);
-    //com.handle_interruption(true, sensores_promedio); //con foto
     uint8_t ev = ctrl.peltier_on ? CondenserCom::PELTIER_ON : CondenserCom::PELTIER_OFF;
     com.when_event(ev, sensores_promedio);
     peltier_actual = ctrl.peltier_on;

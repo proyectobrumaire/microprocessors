@@ -30,7 +30,7 @@ void CondenserCom::iniciar_comunicaciones(){
   pinMode(pins.sensor_interrupt, INPUT_PULLUP);
   attachInterrupt(digitalPinToInterrupt(pins.sensor_interrupt), sensorISR_trampoline, CHANGE);
 
-  p.set_timer(timer_frecuency_mins); //Un minuto
+  p.set_timer(timer_frecuency_mins); //Interrupción periódica cada timer_frecuency_mins minutos
   p.clear_timer_flags(true, true);
 
 }
@@ -84,7 +84,7 @@ bool CondenserCom::takeTimerFlag()  {
 
 void CondenserCom::clearRtcTimerFlags(){
   p.clear_timer_flags(true, true);
-  p.set_timer(timer_frecuency_mins); //Un minuto
+  p.set_timer(timer_frecuency_mins); //Interrupción periódica cada timer_frecuency_mins minutos
 } 
 
 
@@ -217,29 +217,6 @@ bool CondenserCom::wait_for_ack(uint8_t expected_cmd){
   }
   DBGLN("Timeout for ack reached");
   return false;
-}
-
-
-
-void CondenserCom::handle_interruption(bool take_photo, float values[N_DATA]){
-  if (take_photo){
-    when_event(BIRD, values);
-  }
-  else{
-    when_event(PERIODIC,values);
-  }
-}
-
-void CondenserCom::report_boot(float values[N_DATA]){
-  when_event(BOOT, values);
-}
-
-// Retorna horas acumuladas desde inicio del año (aprox).
-// Usar solo para deltas: last = get_rtc_hours(), elapsed = get_rtc_hours() - last.
-uint32_t CondenserCom::get_rtc_hours() {
-  p.get_time();
-  // 744 = 31*24 — sobreestimación uniforme del mes; válida para calcular diferencias
-  return (uint32_t)p.month * 744 + (uint32_t)p.day * 24 + (uint32_t)p.hour;
 }
 
 

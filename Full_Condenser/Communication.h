@@ -67,14 +67,10 @@ public:
 
   bool takeSensorFlag();
   bool takeTimerFlag();
-  void report_boot(float values[N_DATA]);
-  void handle_interruption(bool take_photo, float values[N_DATA]);
   void clearRtcTimerFlags();
   void recieve_commands();
   void sendSensorPulse();
-  void safety_lock_timeout();
   void when_event(uint8_t TYPE, float values_to_send[N_DATA]);
-  uint32_t get_rtc_hours();
 
 
   uint32_t duracion;
