@@ -287,5 +287,6 @@ Todo queda en SQLite local. `/list` no pagina: si la SD tiene más de 20 archivo
 | Firmware Arduino | `Full_Condenser/Full_Condenser.ino`, `Communication.*`, `CondenserControl.*` |
 | Firmware ESP32 | `ESP32_Serial_V2/rtos/rtos.ino` |
 | Emulador Arduino (Python) | `ESP32_Serial_V2/rtos/emulator/arduino_emulator.py` |
+| Prueba automática del protocolo (verifica ACKs) | `ESP32_Serial_V2/rtos/emulator/test_protocolo.py` |
 | Flusher (descarga SD simulada) | `ESP32_Serial_V2/rtos/emulator/flush_files.py` |
 | Formato log V2 (detalle) | `Protocol_Log_V2` |

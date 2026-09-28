@@ -277,7 +277,9 @@ void initMicroSDCard() {
   //SD_present =  true;
 }
 //Métodos seriales
-void sendACK(uint16_t ts[6], uint8_t cmd, uint8_t status) {
+// ts por referencia a arreglo: con "uint16_t ts[6]" el parámetro decae a puntero y
+// txObj enviaba los bytes del puntero (y basura de la pila) en lugar del timestamp.
+void sendACK(const uint16_t (&ts)[6], uint8_t cmd, uint8_t status) {
   delay(5);  //Porque aja
   uint16_t len;
   len = 0;
@@ -422,20 +424,18 @@ esp_err_t download_file_handler(httpd_req_t *req) {
   //Añadir un header para que el navegador sepa que es una descarga
   httpd_resp_set_hdr(req, "Content-Disposition", "inline; filename=capture.jpg");
 
-  char *chunk = (char *)malloc(1024);
-  if (!chunk) {
-    return httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "No RAM for chunk");
-  }
+  // Búfer estático: el servidor HTTP atiende las peticiones de a una (una sola tarea),
+  // así que no hay concurrencia. Evita el malloc, que al fallar dejaba el mutex tomado.
+  static char chunk[1024];
   size_t read_bytes;
   esp_err_t res = ESP_OK;
-  while ((read_bytes = file.read((uint8_t *)chunk, 1024)) > 0) {
+  while ((read_bytes = file.read((uint8_t *)chunk, sizeof(chunk))) > 0) {
     res = httpd_resp_send_chunk(req, chunk, read_bytes);
     if (res != ESP_OK) {
       ESP_LOGE("HTTP", "Abortado: Cliente desconectado");
       break;
     }
   }
-  free(chunk);
   file.close();
   xSemaphoreGive(SDMutex);
   httpd_resp_send_chunk(req, NULL, 0);
@@ -773,9 +773,12 @@ void vTaskSDCard(void *pvParameters) {
                 file = SD_MMC.open("/log.txt", FILE_WRITE);  // crea nuevo
               }
             }
-            if (!file) { ESP_LOGE(tag, "Cant create/open log.txt"); }
-            file.println(receivedEvent.msg);
-            file.close();
+            if (!file) {
+              ESP_LOGE(tag, "Cant create/open log.txt");
+            } else {
+              file.println(receivedEvent.msg);
+              file.close();
+            }
             xSemaphoreGive(SDMutex);
             break;
           }
