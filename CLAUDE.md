@@ -57,6 +57,10 @@ ESP32:
 - Si falla una escritura en la SD (p. ej. `sdmmc_read_blocks failed (0x107)`), no se recupera. Proponer remontar la SD y reintentar.
 - Ambos síntomas aparecen alimentando el ESP32-CAM desde el USB del PC (alimentación débil; el detector de brownout está desactivado en `setup()`). Probar con fuente de 5 V ≥ 2 A.
 
+## API HTTP del ESP32
+
+Contrato con la app en `~/Brumaire/.claude/contracts/esp32-http.md`. `/list` responde `500 Failed to open Dir` cuando la SD no responde; `POST /reboot` reinicia la placa (guarda `seq` antes). La pila del servidor HTTP es de 8 KB (`STACK_HTTP`).
+
 ## Pruebas del ESP32
 
 - `ESP32_Serial_V2/rtos/emulator/test_protocolo.py`: emula al Arduino por serial y verifica cada ACK (cmd, status y timestamp). `--foto` incluye un BIRD; `--host` verifica `log.txt` por HTTP. Escribe eventos de prueba en el `log.txt` real.

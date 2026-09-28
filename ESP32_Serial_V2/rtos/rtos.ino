@@ -491,6 +491,16 @@ esp_err_t reset_log_handler(httpd_req_t *req) {
   httpd_resp_sendstr(req, "{\"status\":\"ok\"}");
   return ESP_OK;
 }
+// POST /reboot: la app reinicia la placa (p. ej. si la SD dejó de responder).
+// Responde primero y reinicia después, para que la respuesta alcance a salir.
+esp_err_t reboot_handler(httpd_req_t *req) {
+  httpd_resp_set_type(req, "application/json");
+  httpd_resp_sendstr(req, "{\"status\":\"reiniciando\"}");
+  saveLogCounters();  // seq no retrocede tras el reinicio
+  delay(500);
+  ESP.restart();
+  return ESP_OK;
+}
 esp_err_t set_time_handler(httpd_req_t *req) {
   if (req->content_len == 0 || req->content_len >= 64) {
     httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Bad length");
@@ -542,6 +552,10 @@ void startServer() {
 
     httpd_uri_t set_time_uri = { .uri = "/set_time", .method = HTTP_POST, .handler = set_time_handler };
     httpd_register_uri_handler(server, &set_time_uri);
+
+    // Reinicio (siempre disponible, como /wifi y /set_time)
+    httpd_uri_t reboot_uri = { .uri = "/reboot", .method = HTTP_POST, .handler = reboot_handler };
+    httpd_register_uri_handler(server, &reboot_uri);
   }
 }
 esp_err_t create_tasks(void) {
