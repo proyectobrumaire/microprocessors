@@ -118,7 +118,11 @@ class CondenserControl {
         float tempAmbiente2;
         float humedad1;
         float humedad2;
-        float puntoRocio;
+        float puntoRocio;       //punto de rocío REAL (se reporta como P1_K)
+        float objetivoPlaca;    //temperatura a la que el PI lleva la placa fría
+        //Objetivo del control: MARGEN_BAJO_ROCIO bajo el rocío real, nunca menor a TEMP_PLACA_MIN
+        static constexpr float MARGEN_BAJO_ROCIO = 8.0;  //°C bajo el rocío real (antes 5, oculto en calcularPuntoRocio)
+        static constexpr float TEMP_PLACA_MIN    = 2.0;  //°C, límite contra la escarcha
 
 
         float peso_agua;

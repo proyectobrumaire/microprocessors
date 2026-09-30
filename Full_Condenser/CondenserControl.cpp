@@ -101,9 +101,11 @@ void CondenserControl::leer_sensores_y_controlar(){
   if (dt > dt_max_ctrl) dt = dt_max_ctrl;
 
   if (!isnan(tempAmbiente2) && !isnan(humedad2) && !isnan(c12)) {
-    puntoRocio = calcularPuntoRocio(tempAmbiente2, humedad2);
-    //Condición de vabilidad (con histéresis para evitar oscilar en el umbral)
-    float umbral_viabilidad = puntoRocio - peltier_temp_amb_max;
+    puntoRocio = calcularPuntoRocio(tempAmbiente2, humedad2);            //rocío real
+    objetivoPlaca = max(puntoRocio - MARGEN_BAJO_ROCIO, TEMP_PLACA_MIN); //límite contra la escarcha
+    //Condición de vabilidad (con histéresis para evitar oscilar en el umbral):
+    //la Peltier no puede llevar la placa al objetivo si el ambiente está demasiado por encima
+    float umbral_viabilidad = objetivoPlaca - peltier_temp_amb_max;
     if (!peltier_on) umbral_viabilidad -= viabilidad_histeresis;
     if (tempAmbiente2 >= umbral_viabilidad){
       pwm = 0;
@@ -111,7 +113,7 @@ void CondenserControl::leer_sensores_y_controlar(){
       peltier_on = false;
       DBGLN("No se puede condensar debido a las condiciones ambientales");
     } else {
-      error = puntoRocio - c12;
+      error = objetivoPlaca - c12;
 
       // Evitar acumulación excesiva (anti-windup)
       errorAcumulado += error * dt;
@@ -198,9 +200,8 @@ void CondenserControl::leer_sensores_y_controlar(){
   DBG("  |  TC2 err: "); DBG(tc2.readError()); DBG("  Int: "); DBGLN(tc2.readInternal());
 #endif
   DBG("Temp Media Fria: "); DBGLN(c12);
-  DBG("Punto Rocío: "); DBGLN(puntoRocio);
-  DBG("Error: "); DBGLN(error);
-  DBG("Error Acumulado: "); DBGLN(errorAcumulado);
+  DBG("Punto Rocío (real): "); DBGLN(puntoRocio);
+  DBG("Objetivo placa: "); DBGLN(objetivoPlaca);
   DBG("Temp Objetivo: "); DBGLN(tempObjetivo);
   DBG("PWM aplicado: "); DBGLN(pwm);
   DBG("Correinte 4: "); DBGLN(voltajeCorrienteFiltrada);
@@ -381,8 +382,7 @@ void CondenserControl::moverVolcado(int desde, int hasta) {
 //Clacula el punto de rocío
 float CondenserControl::calcularPuntoRocio(float temperaturaC, float humedadRelativa) {
   float alpha = log(humedadRelativa / 100.0) + (17.27 * temperaturaC) / (237.3 + temperaturaC);
-  float puntoRocio = ((237.3 * alpha) / (17.27 - alpha)-5); // ajuste -5 ºC
-  return puntoRocio;
+  return (237.3 * alpha) / (17.27 - alpha);  //rocío real (Magnus); el margen se aplica en el control
 }
 
 //Salvar si la división es entre 0

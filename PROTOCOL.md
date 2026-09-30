@@ -169,7 +169,7 @@ El Arduino envía estas 11 claves, en este orden, en cada evento:
 | 0x24 | T5_K  | Temperatura media fría (°C) | Promedio T3/T4 |
 | 0x26 | H1_K  | Humedad externa (%) | DHT22 externo |
 | 0x27 | H2_K  | Humedad interna (%) | DHT22 interno |
-| 0x2A | P1_K  | Punto de rocío (°C, con ajuste −5 °C) | Calculado (Magnus) |
+| 0x2A | P1_K  | Punto de rocío REAL (°C). Hasta el 2026-09-30 incluía un ajuste de −5 °C | Calculado (Magnus) |
 | 0x2B | P2_K  | PWM aplicado a la Peltier (0–255) | Salida del control |
 | 0x2F | I4_K  | Corriente filtrada (A) | ACS712 20 A |
 | 0x30 | W1_K  | Peso del agua | Balanza HX711 (unidades según calibración) |
