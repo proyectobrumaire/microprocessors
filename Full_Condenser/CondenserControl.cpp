@@ -46,6 +46,7 @@ void CondenserControl::iniciar_control(){
   pinMode(pins.mv, OUTPUT);
   seguro.write(SEGURO_TRABADO);  //antes de attach: por defecto Servo arranca en 90° (suelto)
   seguro.attach(pins.m1);
+  valvula.write(VALVULA_CERRADA);  //antes de attach: por defecto Servo arranca en 90°
   valvula.attach(pins.mv);
 
 
@@ -322,36 +323,57 @@ void CondenserControl::ejecutar_volcado() {
   DBGLN("Volcado completado — reanudando control");
 }
 
+// Secuencia calibrada en hardware (tests/volcado_test). El plato siempre queda sujeto: el volcado
+// toma el plato antes de soltar el seguro y se suelta después de trabarlo. La válvula solo se abre
+// con el plato en reposo y trabado.
 void CondenserControl::volcar_plato_y_renovar() {
-  DBGLN("Volcando el plato del bebedero");
-  
-  seguro.write(SEGURO_SUELTO);
-  delay(3000);
-  
+  DBGLN("Vaciando el plato del bebedero");
+
+  // 1. El volcado toma el plato en reposo y se suelta el seguro
+  volcado.write(VOLCADO_REPOSO);  //posición fijada antes de attach
   volcado.attach(pins.m2);
-  volcado.write(90);
-  delay(10000);
-  volcado.write(0);
-  delay(3000);
-  volcado.detach();
-  
-  valvula.write(90);
-  delay(3000);
-  valvula.write(0);
+  delay(500);
+  seguro.write(SEGURO_SUELTO);
+  delay(ESPERA_SEGURO_MS);
+
+  // 2. Volcar, esperar y volver a reposo (lento)
+  moverVolcado(VOLCADO_REPOSO, VOLCADO_VOLCAR);
+  delay(PAUSA_VOLCADO_MS);
+  moverVolcado(VOLCADO_VOLCAR, VOLCADO_REPOSO);
+  delay(ESPERA_SEGURO_MS);
+
+  // 3. Trabar el plato y soltar el volcado (el seguro lo sujeta)
   seguro.write(SEGURO_TRABADO);
+  volcado.detach();
+
+  // 4. Renovar el agua con el plato trabado
+  DBGLN("Renovando el agua");
+  valvula.write(VALVULA_ABIERTA);
+  delay(TIEMPO_RELLENO_MS);
+  valvula.write(VALVULA_CERRADA);
 }
 
-
-
+// Arranque: lleva el plato a reposo (por si quedó a mitad de un vaciado) y lo deja trabado.
 void CondenserControl::reset_plato_pos() {
   DBGLN("Colocando el plato del bebedero");
-  seguro.write(SEGURO_SUELTO);
+  valvula.write(VALVULA_CERRADA);
+  volcado.write(VOLCADO_REPOSO);  //posición fijada antes de attach
   volcado.attach(pins.m2);
-  volcado.write(0);
-  delay(2000);
-  volcado.detach();
+  delay(500);
+  seguro.write(SEGURO_SUELTO);    //deja que el volcado lleve el plato a reposo
+  delay(ESPERA_SEGURO_MS);
   seguro.write(SEGURO_TRABADO);
-  valvula.write(0);
+  volcado.detach();
+}
+
+// Mueve el volcado de a 1° (PASO_VOLCADO_MS por grado). Requiere el volcado conectado.
+void CondenserControl::moverVolcado(int desde, int hasta) {
+  int paso = (hasta > desde) ? 1 : -1;
+  for (int a = desde; a != hasta; a += paso) {
+    volcado.write(a);
+    delay(PASO_VOLCADO_MS);
+  }
+  volcado.write(hasta);
 }
 
 
