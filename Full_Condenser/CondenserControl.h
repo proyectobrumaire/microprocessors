@@ -30,9 +30,11 @@ class CondenserControl {
             uint8_t otrosensor;
             //motores
             uint8_t m1, m2, mv;
+            //sensor de lluvia (salida analógica)
+            uint8_t lluvia;
         };
 
-        static const size_t N_DATA_CRL = 11;
+        static const size_t N_DATA_CRL = 12;
 
         bool peltier_on;
 
@@ -128,6 +130,11 @@ class CondenserControl {
         float peso_agua;
 
         float voltajeCorrienteFiltrada;
+        int lluviaCruda = 0;    //lectura analógica del sensor de lluvia (baja cuando se moja)
+        bool aguaPresente = false;  //último estado del sensor de lluvia (con histéresis)
+        //Calibrado 2026-09-30: seco 1022-1023, mojado 155-282 (poca o mucha agua casi igual)
+        static constexpr int UMBRAL_AGUA_PRESENTE = 600;  //por debajo: hay agua
+        static constexpr int UMBRAL_AGUA_AUSENTE  = 900;  //por encima: seco; entre ambos se mantiene
         //Acumuladores
         float   T1_sum = 0.0; //tempAmbiente2
         float   T2_sum = 0.0; //tempAmbiente1

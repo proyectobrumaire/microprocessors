@@ -4,7 +4,7 @@
 #include "CondenserControl.h"
 #include "Debug.h"
 
-const int N_Sensores = 11;
+const int N_Sensores = 12;
 
 
 /*=========TIEMPOS=========*/
@@ -40,7 +40,9 @@ CondenserControl::Pins ctrlCom{
   //Sensor  ACS712
   A3,
   //motores (M1, M2, Mv)
-  10, 11, 13
+  10, 11, 13,
+  //sensor de lluvia (analógico)
+  A2
 };
 
 //Leds -> 

@@ -18,6 +18,7 @@ SENSORS = [
     (0x2B, 'P2_K', 'PWM aplicado %',         50.0),
     (0x2F, 'I4_K', 'Corriente Peltier A',     1.5),
     (0x30, 'W1_K', 'Peso del agua g',       250.0),
+    (0x31, 'L1_K', 'Lluvia (1 sí / 0 no)',    0.0),
 ]
 
 sensor_values = {code: default for code, _, _, default in SENSORS}

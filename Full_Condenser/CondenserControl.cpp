@@ -169,6 +169,10 @@ void CondenserControl::leer_sensores_y_controlar(){
   float voltaje = (suma / 10.0) * (5.0 / 1023.0);
   voltajeCorrienteFiltrada = (voltaje - 2.5) / 0.100;  // Sensibilidad para 20A
 
+  lluviaCruda = analogRead(pins.lluvia);
+  if (lluviaCruda < UMBRAL_AGUA_PRESENTE) aguaPresente = true;
+  else if (lluviaCruda > UMBRAL_AGUA_AUSENTE) aguaPresente = false;  //entre umbrales: mantiene el estado
+
   //Esto no se puede interumpir...
   noInterrupts();
   //acumular...
@@ -201,6 +205,7 @@ void CondenserControl::leer_sensores_y_controlar(){
   DBG("PWM aplicado: "); DBGLN(pwm);
   DBG("Correinte 4: "); DBGLN(voltajeCorrienteFiltrada);
   DBG("Peso : "); DBGLN(peso_agua);
+  DBG("Lluvia: "); DBG(aguaPresente ? "SI" : "NO"); DBG(" (A2="); DBG(lluviaCruda); DBGLN(")");
   DBGLN("-----------");
 }
 
@@ -229,6 +234,7 @@ void CondenserControl::promediar(float out[N_DATA_CRL]) {
   out[8] = safe_avg(P2_sum, num_samples);
   out[9] = safe_avg(I4_sum, num_samples);
   out[10] = safe_avg(W1_sum, num_samples);
+  out[11] = aguaPresente ? 1.0f : 0.0f;  //lluvia: último estado, no se promedia
   reset_acumuladores();  // ← limpia promedios para la siguiente ventana
 }
 

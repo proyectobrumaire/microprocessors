@@ -28,6 +28,7 @@ Código, comentarios y commits en español.
 - **Seguro: 0° = trabado, 90° = suelto** (`SEGURO_TRABADO`/`SEGURO_SUELTO`, verificado con `tests/seguro_test`).
 - **Volcado: reposo 80° (78 calibrado + margen), volcado 0°**; **válvula: 90° = cerrada, 0° = abierta** (calibrado con `tests/volcado_test`).
 - **Rutina de vaciado** (`volcar_plato_y_renovar`, ~37 s): volcado toma el plato en reposo → soltar seguro → 5 s → volcar → 5 s → reposo → 5 s → trabar → soltar volcado → válvula 15 s. El plato nunca queda sin sujeción y la válvula solo abre con el plato trabado.
+- **Lluvia (A2)**: sensor booleano `L1_K` (1 = agua). Calibrado: seco ≈ 1023, mojado ≈ 155–282; histéresis agua < 600, seco > 900. Se reporta el último estado, no el promedio.
 - **Control**: objetivo de la placa = rocío real − `MARGEN_BAJO_ROCIO` (8 °C), nunca menor a `TEMP_PLACA_MIN` (2 °C, contra escarcha). `P1_K` reporta el rocío real.
 - **Termocuplas (MAX31855)**: las puntas tocan la placa fría y el chip marca "corto a GND" de forma intermitente (ciclo externo de ~29 s, independiente del Arduino y de la Peltier). La lectura es válida → se usa `setFaultChecks(MAX31855_FAULT_OPEN)`. Pendiente aislar las puntas.
 - **Balanza (HX711)**: unidades en gramos (escala −422.55). Tara guardada en EEPROM; si cambia lo que va sobre la celda, re-tarar con `tests/tare_balanza` (celda vacía).

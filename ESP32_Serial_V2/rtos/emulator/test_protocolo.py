@@ -23,12 +23,12 @@ from pySerialTransfer import pySerialTransfer as txfer
 CMD_TAKE_PHOTO, CMD_SAVE_EVENT, CMD_SAVE_DATA = 0x01, 0x02, 0x03
 EVENTOS = {'BOOT': 0x80, 'BIRD': 0x81, 'PERIODIC': 0x82}
 
-# (código, clave, valor de prueba) — mismas 11 claves y orden que Full_Condenser
+# (código, clave, valor de prueba) — mismas 12 claves y orden que Full_Condenser
 SENSORES = [
     (0x20, 'T1_K', 25.0), (0x21, 'T2_K', 28.0), (0x22, 'T3_K', 10.0),
     (0x23, 'T4_K', 10.5), (0x24, 'T5_K', 10.25), (0x26, 'H1_K', 65.0),
     (0x27, 'H2_K', 55.0), (0x2A, 'P1_K', 18.0), (0x2B, 'P2_K', 128.0),
-    (0x2F, 'I4_K', 1.5), (0x30, 'W1_K', 250.0),
+    (0x2F, 'I4_K', 1.5), (0x30, 'W1_K', 250.0), (0x31, 'L1_K', 1.0),
 ]
 
 ACK_TIMEOUT_S = 3.0

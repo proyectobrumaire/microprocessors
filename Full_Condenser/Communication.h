@@ -16,7 +16,7 @@ public:
     byte sensor_interrupt, timer_interrupt, trig;
   };
 
-  static const size_t N_DATA = 11;
+  static const size_t N_DATA = 12;
 
   //Códigos de la sensores y variables a guardar:
   enum KeyCode : uint8_t {
@@ -30,7 +30,8 @@ public:
     P1_K = 0x2A,  // Punto de rocío
     P2_K = 0x2B,  // PWM aplicado
     I4_K = 0x2F,  //Corriente peltier
-    W1_K = 0x30   //Peso agua
+    W1_K = 0x30,  //Peso agua
+    L1_K = 0x31   //Lluvia: 1 = agua presente, 0 = seco (último estado, no se promedia)
   };
 
   //Códigos de la trama:

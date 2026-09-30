@@ -87,11 +87,11 @@ El ESP32 decodifica la clave con `keyLabel()` y formatea la línea CSV.
 
 1. `CMD_TAKE_PHOTO` — **solo si** `TYPE == BIRD`.
 2. `CMD_SAVE_EVENT` con `TYPE`.
-3. 11 × `CMD_SAVE_DATA`, uno por sensor, en el orden de `kAllKeys` (ver tabla de sensores).
+3. 12 × `CMD_SAVE_DATA`, uno por sensor, en el orden de `kAllKeys` (ver tabla de sensores).
 
 Los valores de sensores son el **promedio de la ventana** desde el último reporte (`CondenserControl::promediar`). Si no hubo muestras nuevas desde el reporte anterior, se reenvía el último promedio válido.
 
-Tras cada paquete el Arduino espera el ACK (`wait_for_ack`, timeout 10 s). Si no llega, **sigue enviando igual** (no reintenta). Si falla el ACK del primer `SAVE_DATA`, deja de esperar ACK en los 10 restantes. Peor caso con el ESP32 caído: ~30 s de bloqueo en un BIRD, ~20 s en los demás eventos.
+Tras cada paquete el Arduino espera el ACK (`wait_for_ack`, timeout 10 s). Si no llega, **sigue enviando igual** (no reintenta). Si falla el ACK del primer `SAVE_DATA`, deja de esperar ACK en los 11 restantes. Peor caso con el ESP32 caído: ~30 s de bloqueo en un BIRD, ~20 s en los demás eventos.
 
 ---
 
@@ -158,7 +158,7 @@ En el ESP32, un código desconocido se registra como `INVALID_EV`.
 
 ## Códigos de sensores (KeyCode)
 
-El Arduino envía estas 11 claves, en este orden, en cada evento:
+El Arduino envía estas 12 claves, en este orden, en cada evento:
 
 | Hex  | Clave | Descripción | Fuente |
 |------|-------|-------------|--------|
@@ -173,6 +173,7 @@ El Arduino envía estas 11 claves, en este orden, en cada evento:
 | 0x2B | P2_K  | PWM aplicado a la Peltier (0–255) | Salida del control |
 | 0x2F | I4_K  | Corriente filtrada (A) | ACS712 20 A |
 | 0x30 | W1_K  | Peso del agua | Balanza HX711 (unidades según calibración) |
+| 0x31 | L1_K  | Lluvia: **1 = agua presente, 0 = seco**. Es el **último estado**, no un promedio (desde 2026-09-30) | Sensor de lluvia en A2 con histéresis: agua si < 600, seco si > 900 (seco ≈ 1023, mojado ≈ 155–282) |
 
 Claves desconocidas se decodifican como `Z0_K`. Los códigos 0x25 (T6_K), 0x28 (E1_K), 0x29 (E2_K) y 0x2C–0x2E (I1_K–I3_K) pertenecen a versiones anteriores y ya no se envían; la app conserva sus etiquetas para leer logs antiguos.
 

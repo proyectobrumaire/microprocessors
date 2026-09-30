@@ -11,7 +11,8 @@ const CondenserCom::KeyCode CondenserCom::kAllKeys[CondenserCom::N_DATA] = {
   CondenserCom::T5_K, CondenserCom::H1_K, CondenserCom::H2_K,
   CondenserCom::P1_K, CondenserCom::P2_K,
   CondenserCom::I4_K,
-  CondenserCom::W1_K
+  CondenserCom::W1_K,
+  CondenserCom::L1_K
 };
 
 // Constructor: p con dirección 0xA0
