@@ -17,7 +17,7 @@ int tiempoSensor = 0; //Tiempo actual del sensor
 // vacía si ya pasó HORA_VOLCADO y todavía no se vació hoy. La fecha del último vaciado se guarda en
 // EEPROM, así un reinicio no repite el vaciado del día ni lo salta (si se reinicia después de la
 // hora, vacía en el siguiente tick).
-const uint8_t HORA_VOLCADO = 20;       // 20:00 (8 p. m.)
+const uint8_t HORA_VOLCADO = 20;       // hora (0-23, hora local del RTC) desde la que se vacía
 const int EEPROM_VOLCADO_ADDR = 16;    // 3 bytes: yy, mm, dd del último vaciado (la balanza usa 0-8)
 
 bool fechaRtcValida(uint8_t yy, uint8_t mm, uint8_t dd, uint8_t hh) {

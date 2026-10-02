@@ -148,7 +148,7 @@ Cuando la app móvil sincroniza la hora vía HTTP (`POST /set_time`), el ESP32 r
 | 0x82 | PERIODIC    | En cada interrupción del timer del RTC (cada 5 min). |
 | 0x83 | PELTIER_ON  | El control pasa a condición viable y activa el PI. También cuando un sensor del control da NaN (la celda queda a PWM 255). |
 | 0x84 | PELTIER_OFF | La condensación deja de ser viable (`T_amb ≥ rocío + ~19 °C`). Histéresis de 1 °C para volver a PELTIER_ON. |
-| 0x85 | VOLCADO     | Tras terminar la secuencia de vaciado y relleno del plato. Una vez al día, desde las 20:00 hora local del RTC (`HORA_VOLCADO`). |
+| 0x85 | VOLCADO     | Tras terminar la secuencia de vaciado y relleno del plato. Una vez al día, desde la hora `HORA_VOLCADO` (hora local del RTC, configurable en `Full_Condenser.ino`). |
 
 En el ESP32, un código desconocido se registra como `INVALID_EV`.
 
