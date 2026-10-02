@@ -14,14 +14,15 @@ int tiempoSensor = 0; //Tiempo actual del sensor
 
 /*=========VOLCADO=========*/
 // Vaciado diario a hora fija (hora local del RTC). Se evalúa en cada tick del timer (cada 5 min):
-// vacía si ya pasó HORA_VOLCADO y todavía no se vació hoy. La fecha del último vaciado se guarda en
+// vacía si ya pasó HORA_VOLCADO:MINUTO_VOLCADO y todavía no se vació hoy (resolución de 5 min por el timer). La fecha del último vaciado se guarda en
 // EEPROM, así un reinicio no repite el vaciado del día ni lo salta (si se reinicia después de la
 // hora, vacía en el siguiente tick).
-const uint8_t HORA_VOLCADO = 20;       // hora (0-23, hora local del RTC) desde la que se vacía
+const uint8_t HORA_VOLCADO = 21;       // hora (0-23, hora local del RTC) desde la que se vacía
+const uint8_t MINUTO_VOLCADO = 40;     // minuto (0-59)
 const int EEPROM_VOLCADO_ADDR = 16;    // 3 bytes: yy, mm, dd del último vaciado (la balanza usa 0-8)
 
-bool fechaRtcValida(uint8_t yy, uint8_t mm, uint8_t dd, uint8_t hh) {
-  return yy >= 20 && mm >= 1 && mm <= 12 && dd >= 1 && dd <= 31 && hh < 24;
+bool fechaRtcValida(uint8_t yy, uint8_t mm, uint8_t dd, uint8_t hh, uint8_t mi) {
+  return yy >= 20 && mm >= 1 && mm <= 12 && dd >= 1 && dd <= 31 && hh < 24 && mi < 60;
 }
 
 bool volcadoHechoHoy(uint8_t yy, uint8_t mm, uint8_t dd) {
@@ -110,12 +111,12 @@ void loop(void) {
 
     com.when_event(CondenserCom::PERIODIC, sensores_promedio);
 
-    // Verificar si es hora de volcar (una vez al día, desde HORA_VOLCADO)
+    // Verificar si es hora de volcar (una vez al día, desde HORA_VOLCADO:MINUTO_VOLCADO)
     uint8_t yy, mm, dd, hh, mi;
     com.get_fecha_hora(yy, mm, dd, hh, mi);
-    if (!fechaRtcValida(yy, mm, dd, hh)) {
+    if (!fechaRtcValida(yy, mm, dd, hh, mi)) {
       DBGLN("RTC con fecha inválida: vaciado omitido (sincroniza la hora desde la app)");
-    } else if (hh >= HORA_VOLCADO && !volcadoHechoHoy(yy, mm, dd)) {
+    } else if (hh * 60 + mi >= HORA_VOLCADO * 60 + MINUTO_VOLCADO && !volcadoHechoHoy(yy, mm, dd)) {
       DBGLN("Hora de volcar el plato");
       ctrl.ejecutar_volcado();
       com.when_event(CondenserCom::VOLCADO, sensores_promedio);
