@@ -148,7 +148,7 @@ Cuando la app móvil sincroniza la hora vía HTTP (`POST /set_time`), el ESP32 r
 | 0x82 | PERIODIC    | En cada interrupción del timer del RTC (cada 5 min). |
 | 0x83 | PELTIER_ON  | El control pasa a condición viable y activa el PI. También cuando un sensor del control da NaN (la celda queda a PWM 255). |
 | 0x84 | PELTIER_OFF | La condensación deja de ser viable (`T_amb ≥ rocío + ~19 °C`). Histéresis de 1 °C para volver a PELTIER_ON. |
-| 0x85 | VOLCADO     | Tras terminar la secuencia de vaciado y relleno del plato (se evalúa en cada tick del timer). |
+| 0x85 | VOLCADO     | Tras terminar la secuencia de vaciado y relleno del plato. Una vez al día, desde las 20:00 hora local del RTC (`HORA_VOLCADO`). |
 
 En el ESP32, un código desconocido se registra como `INVALID_EV`.
 
@@ -173,7 +173,7 @@ El Arduino envía estas 12 claves, en este orden, en cada evento:
 | 0x2B | P2_K  | PWM aplicado a la Peltier (0–255) | Salida del control |
 | 0x2F | I4_K  | Corriente filtrada (A) | ACS712 20 A |
 | 0x30 | W1_K  | Peso del agua | Balanza HX711 (unidades según calibración) |
-| 0x31 | L1_K  | Lluvia: **1 = agua presente, 0 = seco**. Es el **último estado**, no un promedio (desde 2026-09-30) | Sensor de lluvia en A2 con histéresis: agua si < 600, seco si > 900 (seco ≈ 1023, mojado ≈ 155–282) |
+| 0x31 | L1_K  | Lluvia: **1 = agua presente, 0 = seco**. Es el **último estado**, no un promedio (desde 2026-09-30) | Sensor de lluvia en A2 con histéresis: agua si < 400, seco si > 500 (seco ≈ 1023, mojado ≈ 155–282) |
 
 Claves desconocidas se decodifican como `Z0_K`. Los códigos 0x25 (T6_K), 0x28 (E1_K), 0x29 (E2_K) y 0x2C–0x2E (I1_K–I3_K) pertenecen a versiones anteriores y ya no se envían; la app conserva sus etiquetas para leer logs antiguos.
 

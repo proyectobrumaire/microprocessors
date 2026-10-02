@@ -13,8 +13,27 @@ const int tiempoLectura = 1;      // Intervalo de lectura y control en segundos
 int tiempoSensor = 0; //Tiempo actual del sensor
 
 /*=========VOLCADO=========*/
-const unsigned long volcado_interval_min = 2UL;  // Cada cuántos minutos volcar el plato (1440 = 24h)
-unsigned long last_volcado_ms = 0;
+// Vaciado diario a hora fija (hora local del RTC). Se evalúa en cada tick del timer (cada 5 min):
+// vacía si ya pasó HORA_VOLCADO y todavía no se vació hoy. La fecha del último vaciado se guarda en
+// EEPROM, así un reinicio no repite el vaciado del día ni lo salta (si se reinicia después de la
+// hora, vacía en el siguiente tick).
+const uint8_t HORA_VOLCADO = 20;       // 20:00 (8 p. m.)
+const int EEPROM_VOLCADO_ADDR = 16;    // 3 bytes: yy, mm, dd del último vaciado (la balanza usa 0-8)
+
+bool fechaRtcValida(uint8_t yy, uint8_t mm, uint8_t dd, uint8_t hh) {
+  return yy >= 20 && mm >= 1 && mm <= 12 && dd >= 1 && dd <= 31 && hh < 24;
+}
+
+bool volcadoHechoHoy(uint8_t yy, uint8_t mm, uint8_t dd) {
+  return EEPROM.read(EEPROM_VOLCADO_ADDR) == yy && EEPROM.read(EEPROM_VOLCADO_ADDR + 1) == mm &&
+         EEPROM.read(EEPROM_VOLCADO_ADDR + 2) == dd;
+}
+
+void marcarVolcadoHoy(uint8_t yy, uint8_t mm, uint8_t dd) {
+  EEPROM.update(EEPROM_VOLCADO_ADDR, yy);
+  EEPROM.update(EEPROM_VOLCADO_ADDR + 1, mm);
+  EEPROM.update(EEPROM_VOLCADO_ADDR + 2, dd);
+}
 
 
 /*=========CONTROL=========*/
@@ -73,7 +92,6 @@ void setup(void) {
   ctrl.promediar(sensores_promedio); //Primera lectura
   com.when_event(CondenserCom::BOOT, sensores_promedio);
   peltier_actual = ctrl.peltier_on;
-  last_volcado_ms = millis();
 }
 
 
@@ -92,12 +110,16 @@ void loop(void) {
 
     com.when_event(CondenserCom::PERIODIC, sensores_promedio);
 
-    // Verificar si es hora de volcar
-    if ((millis() - last_volcado_ms) >= volcado_interval_min * 60000UL) {
+    // Verificar si es hora de volcar (una vez al día, desde HORA_VOLCADO)
+    uint8_t yy, mm, dd, hh, mi;
+    com.get_fecha_hora(yy, mm, dd, hh, mi);
+    if (!fechaRtcValida(yy, mm, dd, hh)) {
+      DBGLN("RTC con fecha inválida: vaciado omitido (sincroniza la hora desde la app)");
+    } else if (hh >= HORA_VOLCADO && !volcadoHechoHoy(yy, mm, dd)) {
       DBGLN("Hora de volcar el plato");
       ctrl.ejecutar_volcado();
       com.when_event(CondenserCom::VOLCADO, sensores_promedio);
-      last_volcado_ms = millis();
+      marcarVolcadoHoy(yy, mm, dd);
     }
   }
 

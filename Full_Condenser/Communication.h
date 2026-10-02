@@ -69,6 +69,7 @@ public:
   bool takeSensorFlag();
   bool takeTimerFlag();
   void clearRtcTimerFlags();
+  void get_fecha_hora(uint8_t &yy, uint8_t &mm, uint8_t &dd, uint8_t &hh, uint8_t &mi);  //hora local del RTC
   void recieve_commands();
   void sendSensorPulse();
   void when_event(uint8_t TYPE, float values_to_send[N_DATA]);

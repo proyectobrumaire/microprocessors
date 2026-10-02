@@ -133,8 +133,8 @@ class CondenserControl {
         int lluviaCruda = 0;    //lectura analógica del sensor de lluvia (baja cuando se moja)
         bool aguaPresente = false;  //último estado del sensor de lluvia (con histéresis)
         //Calibrado 2026-09-30: seco 1022-1023, mojado 155-282 (poca o mucha agua casi igual)
-        static constexpr int UMBRAL_AGUA_PRESENTE = 600;  //por debajo: hay agua
-        static constexpr int UMBRAL_AGUA_AUSENTE  = 900;  //por encima: seco; entre ambos se mantiene
+        static constexpr int UMBRAL_AGUA_PRESENTE = 400;   //por debajo: hay agua
+        static constexpr int UMBRAL_AGUA_AUSENTE  = 500;   //por encima: seco; entre ambos se mantiene (al secarse la lectura sube lento)
         //Acumuladores
         float   T1_sum = 0.0; //tempAmbiente2
         float   T2_sum = 0.0; //tempAmbiente1

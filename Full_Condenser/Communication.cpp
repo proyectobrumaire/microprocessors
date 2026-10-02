@@ -222,6 +222,12 @@ bool CondenserCom::wait_for_ack(uint8_t expected_cmd){
 
 
 
+// Fecha y hora local del RTC (año en 2 dígitos, igual que en los timestamps de los eventos)
+void CondenserCom::get_fecha_hora(uint8_t &yy, uint8_t &mm, uint8_t &dd, uint8_t &hh, uint8_t &mi) {
+  p.get_time();
+  yy = p.year % 100; mm = p.month; dd = p.day; hh = p.hour; mi = p.minute;
+}
+
 void CondenserCom::recieve_commands(){
   if(link.available()){
     uint16_t index = 0;
