@@ -17,8 +17,8 @@ int tiempoSensor = 0; //Tiempo actual del sensor
 // vacía si ya pasó HORA_VOLCADO:MINUTO_VOLCADO y todavía no se vació hoy (resolución de 5 min por el timer). La fecha del último vaciado se guarda en
 // EEPROM, así un reinicio no repite el vaciado del día ni lo salta (si se reinicia después de la
 // hora, vacía en el siguiente tick).
-const uint8_t HORA_VOLCADO = 21;       // hora (0-23, hora local del RTC) desde la que se vacía
-const uint8_t MINUTO_VOLCADO = 40;     // minuto (0-59)
+const uint8_t HORA_VOLCADO = 22;       // hora (0-23, hora local del RTC) desde la que se vacía
+const uint8_t MINUTO_VOLCADO = 0;      // minuto (0-59)
 const int EEPROM_VOLCADO_ADDR = 16;    // 3 bytes: yy, mm, dd del último vaciado (la balanza usa 0-8)
 
 bool fechaRtcValida(uint8_t yy, uint8_t mm, uint8_t dd, uint8_t hh, uint8_t mi) {
@@ -114,6 +114,11 @@ void loop(void) {
     // Verificar si es hora de volcar (una vez al día, desde HORA_VOLCADO:MINUTO_VOLCADO)
     uint8_t yy, mm, dd, hh, mi;
     com.get_fecha_hora(yy, mm, dd, hh, mi);
+    //Diagnóstico del vaciado (solo con DEBUG): hora del RTC, objetivo y si ya se vació hoy
+    DBG("Vaciado: RTC "); DBG(hh); DBG(":"); DBG(mi); DBG(" objetivo "); DBG(HORA_VOLCADO); DBG(":"); DBG(MINUTO_VOLCADO);
+    DBG(" fecha "); DBG(yy); DBG("-"); DBG(mm); DBG("-"); DBG(dd);
+    DBG(fechaRtcValida(yy, mm, dd, hh, mi) ? " valida" : " INVALIDA");
+    DBGLN(volcadoHechoHoy(yy, mm, dd) ? " | ya se vació hoy" : " | pendiente hoy");
     if (!fechaRtcValida(yy, mm, dd, hh, mi)) {
       DBGLN("RTC con fecha inválida: vaciado omitido (sincroniza la hora desde la app)");
     } else if (hh * 60 + mi >= HORA_VOLCADO * 60 + MINUTO_VOLCADO && !volcadoHechoHoy(yy, mm, dd)) {

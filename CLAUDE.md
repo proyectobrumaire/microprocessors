@@ -20,7 +20,7 @@ Código, comentarios y commits en español.
 - Librerías: las de `libraries.zip` (instalar en `~/Arduino/libraries`). **PCF8583 es una versión modificada** (tiene `set_timer`, `clear_timer_flags`); no usar la del gestor de librerías. `Servo`, `EEPROM`, `Wire`, `SPI` vienen con el core AVR.
 - Abrir el puerto serie reinicia el Mega (DTR). Solo un programa puede tener el puerto abierto (cerrar el Monitor Serie del IDE antes de cargar).
 - `Full_Condenser/Debug.h`: **`DEBUG 0` en operación** (`Serial.print` bloquea aunque no haya USB; con DEBUG 1 el Serial USB va a 115200).
-- `tests/`: sketches de diagnóstico (`tc_diag`, `seguro_test`, `tare_balanza`). Dejan la Peltier y los ventiladores apagados. Después de usarlos, volver a cargar `Full_Condenser`.
+- `tests/`: sketches de diagnóstico (`tc_diag`, `seguro_test`, `seguro_solo`, `volcado_test`, `tare_balanza`, `borrar_marca_volcado`, `parada`). Dejan la Peltier y los ventiladores apagados. Después de usarlos, volver a cargar `Full_Condenser`.
 
 ## Datos de hardware verificados
 
