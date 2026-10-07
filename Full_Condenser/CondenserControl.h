@@ -90,7 +90,7 @@ class CondenserControl {
         static constexpr int SEGURO_TRABADO = 0;
         static constexpr int SEGURO_SUELTO  = 90;
         //Volcado y válvula calibrados en hardware con tests/volcado_test (2026-09-29)
-        static constexpr int VOLCADO_REPOSO = 80;   //plato en reposo (90 forzaba contra el tope; 78 calibrado, 80 por margen)
+        static constexpr int VOLCADO_REPOSO = 90;   //plato en reposo
         static constexpr int VOLCADO_VOLCAR = 0;    //plato vaciándose
         static constexpr int VALVULA_CERRADA = 90;
         static constexpr int VALVULA_ABIERTA = 0;
