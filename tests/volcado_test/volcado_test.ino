@@ -27,7 +27,7 @@
 
 const uint8_t M1 = 10, M2 = 11, MV = 13;          // seguro, volcado, válvula
 const int SEGURO_TRABADO = 0, SEGURO_SUELTO = 90;  // verificados con seguro_test (2026-09-24)
-const int REPOSO = 78;                             // volcado en reposo (calibrado 2026-09-29)
+const int REPOSO = 90;                             // volcado en reposo (calibrado 2026-09-29)
 const int VOLCADO = 0;                             // volcado en posición de vaciado
 const unsigned long ESPERA_INICIAL_MS = 5000;      // volcado sin conectar al arrancar
 const unsigned long ESPERA_SEGURO_MS = 5000;       // tiempo muerto entre seguro y rotación
