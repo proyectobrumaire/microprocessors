@@ -36,6 +36,14 @@ class CondenserControl {
 
         static const size_t N_DATA_CRL = 12;
 
+        //Modo de la Peltier según el horario (lo fija Full_Condenser.ino en cada ciclo)
+        enum ModoPeltier : uint8_t {
+            PELTIER_APAGADA,    //fuera de franja: Peltier y ventiladores apagados
+            PELTIER_PWM_FIJO,   //PWM fijo = pwm_max (sin PI), si es viable
+            PELTIER_PI          //control PI con tope pwm_max, si es viable
+        };
+
+        //true = la Peltier (y los ventiladores) están encendidos en este ciclo
         bool peltier_on;
 
         explicit CondenserControl(const Pins& p); //constructor
@@ -44,6 +52,10 @@ class CondenserControl {
 
         void promediar(float out[N_DATA_CRL]);
         void ejecutar_volcado();
+        void set_modo(ModoPeltier modo_, float pwm_max_);  //sin efecto si no cambia
+        float get_peso_agua() const { return peso_agua; }  //última lectura válida (g)
+        bool balanza_con_error() const;                      //no encontrada o >10 s sin datos
+        bool get_tanque_lleno() const { return tanqueLleno; }
         //inline
         void set_PI_parameters (float kp_, float ki_, float maxint_) {kp = kp_; ki = ki_; maxIntegracion= maxint_; };
         
@@ -61,6 +73,8 @@ class CondenserControl {
         sensors_event_t event{};  
 
         //motor
+        void actualizar_ventiladores();  //van con la Peltier: encendidos solo si peltier_on
+        bool ventiladores_on = false;
         void ApagarVentiladorPrincipal();
         void PrenderVentiladorPrincipal();
         void PrenderVentiladorChimenea();
@@ -76,11 +90,20 @@ class CondenserControl {
         const float SCALE_DEFAULT = -422.55f;
 
         //Seguridad placas peltier
-        static constexpr int max_peltier_op = 100;
-        static constexpr float peltier_delta_T = -0.0745; //Grados por unidad pwm     
-        float peltier_temp_amb_max;
-        float peltier_pwm_max;
+        static constexpr float peltier_delta_T = -0.0745; //Grados por unidad pwm
         static constexpr float viabilidad_histeresis = 1.0; //Grados para re-habilitar la condensación
+        ModoPeltier modo = PELTIER_APAGADA;
+        float pwm_max = 0.0;        //PWM fijo o tope del PI del modo actual (0-255)
+        bool es_viable = false;     //resultado de la condición de viabilidad (con histéresis)
+        bool viabilidad_sin_histeresis = true;  //primera evaluación tras un cambio de modo
+
+        //Tanque (balanza, en gramos; 1 g ≈ 1 ml)
+        static constexpr float TANQUE_LLENO_G     = 2000.0;  //por encima: deja de condensar
+        static constexpr float TANQUE_REANUDA_G   = 1900.0;  //por debajo: vuelve a condensar
+        static constexpr float BALANZA_MIN_VALIDA_G = -200.0; //lecturas menores se ignoran
+        static constexpr unsigned long BALANZA_TIMEOUT_MS = 10000;  //sin datos → balanza con error
+        bool tanqueLleno = false;
+        unsigned long t_balanza_ultimo_dato = 0;
 
         //Servomotores
         Servo volcado;
@@ -97,7 +120,7 @@ class CondenserControl {
         static constexpr unsigned long PASO_VOLCADO_MS    = 20;     //velocidad del volcado (ms por grado)
         static constexpr unsigned long ESPERA_SEGURO_MS   = 5000;   //tiempo muerto entre seguro y giro
         static constexpr unsigned long PAUSA_VOLCADO_MS   = 5000;   //tiempo con el plato volcado
-        static constexpr unsigned long TIEMPO_RELLENO_MS  = 15000;  //válvula abierta al renovar el agua
+        static constexpr unsigned long TIEMPO_RELLENO_MS  = 45000;  //válvula abierta al renovar el agua
         void volcar_plato_y_renovar();
         void reset_plato_pos();
         void moverVolcado(int desde, int hasta);
@@ -127,7 +150,7 @@ class CondenserControl {
         static constexpr float TEMP_PLACA_MIN    = 2.0;  //°C, límite contra la escarcha
 
 
-        float peso_agua;
+        float peso_agua = 0.0;
 
         float voltajeCorrienteFiltrada;
         int lluviaCruda = 0;    //lectura analógica del sensor de lluvia (baja cuando se moja)

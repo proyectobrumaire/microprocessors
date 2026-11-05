@@ -69,7 +69,10 @@ public:
   bool takeSensorFlag();
   bool takeTimerFlag();
   void clearRtcTimerFlags();
-  void get_fecha_hora(uint8_t &yy, uint8_t &mm, uint8_t &dd, uint8_t &hh, uint8_t &mi);  //hora local del RTC
+  //Hora local del RTC (año en 2 dígitos). false si el bus I2C no respondió (timeout); los
+  //campos pueden traer basura si el RTC no responde: validarlos antes de usarlos.
+  bool get_fecha_hora(uint8_t &yy, uint8_t &mm, uint8_t &dd, uint8_t &hh, uint8_t &mi, uint8_t &ss);
+  bool takeSetTimeFlag();  //true una vez después de cada SET_TIME recibido de la app
   void recieve_commands();
   void sendSensorPulse();
   void when_event(uint8_t TYPE, float values_to_send[N_DATA]);
@@ -87,6 +90,7 @@ private:
 
   volatile bool flag_sensor = false;
   volatile bool flag_timer = false;
+  bool flag_set_time = false;
 
   volatile uint32_t startPulse = 0;
   
