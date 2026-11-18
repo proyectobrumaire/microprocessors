@@ -86,7 +86,7 @@ private:
   Pins pins;
 
   const uint32_t min_sensor_duration = 50; // 0 cm
-  const uint32_t max_sensor_duration = 2500; // 40 cm
+  const uint32_t max_sensor_duration = 1100; // 20 cm
 
   volatile bool flag_sensor = false;
   volatile bool flag_timer = false;
