@@ -27,10 +27,11 @@
 
 const uint8_t M1 = 10, M2 = 11, MV = 13;          // seguro, volcado, válvula
 const int SEGURO_TRABADO = 0, SEGURO_SUELTO = 90;  // verificados con seguro_test (2026-09-24)
-const int REPOSO = 78;                             // volcado en reposo (calibrado 2026-09-29)
+const int REPOSO = 100;                            // volcado en reposo, horizontal (calibrado 2026-11-17; igual que VOLCADO_REPOSO)
 const int VOLCADO = 0;                             // volcado en posición de vaciado
 const unsigned long ESPERA_INICIAL_MS = 5000;      // volcado sin conectar al arrancar
 const unsigned long ESPERA_SEGURO_MS = 5000;       // tiempo muerto entre seguro y rotación
+const unsigned long ESPERA_TRABA_MS = 1500;        // el volcado sostiene el plato mientras entra el seguro
 const unsigned long PAUSA_VOLCADO_MS = 5000;       // tiempo en la posición de volcado
 const int VALVULA_CERRADA = 90, VALVULA_ABIERTA = 0;  // verificados en hardware (2026-09-29); Full_Condenser los tiene al revés
 const unsigned long TIEMPO_RELLENO_MS = 15000;    // válvula abierta en cada relleno
@@ -74,6 +75,7 @@ void conectarVolcado() {
 
 void soltarVolcado() {
   if (!volcado.attached()) return;
+  delay(ESPERA_TRABA_MS);                           // que el seguro termine de entrar antes de soltar el plato
   volcado.detach();
   Serial.println(F("volcado -> sin fuerza (el seguro sujeta el plato)"));
 }

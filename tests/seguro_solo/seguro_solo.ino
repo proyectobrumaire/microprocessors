@@ -1,13 +1,13 @@
 // Mueve SOLO el servo del seguro (pin 10), alternando trabado/suelto cada 3 s, en bucle.
 // Para diagnosticar si el seguro responde (cable, conector o servo).
 // Seguridad: Peltier y ventiladores APAGADOS, válvula CERRADA (90°), y el volcado (pin 11)
-// sujeta el plato en reposo (80°) para que no quede suelto cuando el seguro se abre.
+// sujeta el plato en reposo (100°) para que no quede suelto cuando el seguro se abre.
 
 #include <Servo.h>
 
 const uint8_t M_SEGURO = 10, M_VOLCADO = 11, M_VALVULA = 13;
 const int SEGURO_TRABADO = 0, SEGURO_SUELTO = 90;
-const int VOLCADO_REPOSO = 80, VALVULA_CERRADA = 90;   // calibrados (CondenserControl.h)
+const int VOLCADO_REPOSO = 100, VALVULA_CERRADA = 90;  // calibrados (CondenserControl.h)
 const uint8_t POWER_PINS[] = {5, 4, 39, 33, 30, 31, 2, 28, 29, 3};  // IBT-2 y L298N
 
 Servo seguro, volcado, valvula;

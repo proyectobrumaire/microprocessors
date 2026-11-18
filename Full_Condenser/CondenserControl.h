@@ -113,12 +113,13 @@ class CondenserControl {
         static constexpr int SEGURO_TRABADO = 0;
         static constexpr int SEGURO_SUELTO  = 90;
         //Volcado y válvula calibrados en hardware con tests/volcado_test (2026-09-29)
-        static constexpr int VOLCADO_REPOSO = 90;   //plato en reposo
+        static constexpr int VOLCADO_REPOSO = 100;  //plato en reposo (horizontal, calibrado 2026-11-17)
         static constexpr int VOLCADO_VOLCAR = 0;    //plato vaciándose
         static constexpr int VALVULA_CERRADA = 90;
         static constexpr int VALVULA_ABIERTA = 0;
         static constexpr unsigned long PASO_VOLCADO_MS    = 20;     //velocidad del volcado (ms por grado)
         static constexpr unsigned long ESPERA_SEGURO_MS   = 5000;   //tiempo muerto entre seguro y giro
+        static constexpr unsigned long ESPERA_TRABA_MS    = 1500;   //el volcado sostiene el plato mientras entra el seguro
         static constexpr unsigned long PAUSA_VOLCADO_MS   = 5000;   //tiempo con el plato volcado
         static constexpr unsigned long TIEMPO_RELLENO_MS  = 45000;  //válvula abierta al renovar el agua
         void volcar_plato_y_renovar();

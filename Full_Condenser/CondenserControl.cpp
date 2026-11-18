@@ -415,6 +415,7 @@ void CondenserControl::volcar_plato_y_renovar() {
 
   // 3. Trabar el plato y soltar el volcado (el seguro lo sujeta)
   seguro.write(SEGURO_TRABADO);
+  delay(ESPERA_TRABA_MS);         //que el seguro termine de entrar antes de soltar el plato
   volcado.detach();
 
   // 4. Renovar el agua con el plato trabado
@@ -434,6 +435,7 @@ void CondenserControl::reset_plato_pos() {
   seguro.write(SEGURO_SUELTO);    //deja que el volcado lleve el plato a reposo
   delay(ESPERA_SEGURO_MS);
   seguro.write(SEGURO_TRABADO);
+  delay(ESPERA_TRABA_MS);         //que el seguro termine de entrar antes de soltar el plato
   volcado.detach();
 }
 
