@@ -3,7 +3,7 @@
 // Peltier y ventiladores apagados (igual que tests/parada).
 const uint8_t PINS_BAJO[] = {10, 11, 13, 5, 4, 39, 33, 30, 31, 2, 28, 29, 3};
 const uint8_t TRIG = 12, ECHO = 18;
-const uint32_t MIN_US = 50, MAX_US = 500;  // mismos límites que Communication.h
+const uint32_t MIN_US = 50, MAX_US = 1100;  // mismos límites que Communication.h
 
 void setup() {
   for (uint8_t p : PINS_BAJO) { pinMode(p, OUTPUT); digitalWrite(p, LOW); }
