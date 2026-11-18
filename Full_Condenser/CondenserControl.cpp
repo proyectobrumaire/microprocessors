@@ -8,9 +8,7 @@ CondenserControl::CondenserControl(const CondenserControl::Pins& p)
   dht1(p.dht_pin1, DHT22),
   dht2(p.dht_pin2, DHT22),
   tc1(p.max_clk1, p.max_cs1, p.max_d01),
-  tc2(p.max_clk2, p.max_cs2, p.max_d02),
-  peltier_pwm_max(max_peltier_op*2.55),
-  peltier_temp_amb_max(max_peltier_op*2.55*peltier_delta_T)
+  tc2(p.max_clk2, p.max_cs2, p.max_d02)
   {
 } //Aqupi solamente se llama al constructor para poblar p (que son los pines)
 
@@ -63,10 +61,11 @@ void CondenserControl::iniciar_control(){
   analogWrite (pins.lpwm, 0);
   peltier_on = false;
 
-  //Prender los ventiladores
-  PrenderVentiladorPrincipal();
-  PrenderVentiladorChimenea();
-  is_ventilador_chimenea_on = true;
+  //Ventiladores apagados: se encienden con la Peltier (actualizar_ventiladores)
+  ApagarVentiladorPrincipal();
+  ApagarVentiladorChimenea();
+  ventiladores_on = false;
+  is_ventilador_chimenea_on = false;
   t_ventilador_ultimo_on = millis();
 
   t_ctrl_prev = millis();
@@ -93,73 +92,86 @@ void CondenserControl::leer_sensores_y_controlar(){
   dht2.humidity().getEvent(&event);
   humedad2 = event.relative_humidity;
 
-  //dt se actualiza en todas las ramas: si el PI estuvo inactivo (no viable, sensor en NaN o volcado)
-  //no debe integrar de golpe todo ese tiempo. Se limita a dt_max_ctrl como protección adicional.
+  //Balanza (antes del control: el corte por tanque lleno depende de ella).
+  // Lectura sin bloqueo: HX711::read() espera indefinidamente si el chip no está listo
+  // (p.ej. balanza desconectada). Si no hay dato nuevo se conserva el último peso.
+  // Las lecturas absurdas (< BALANZA_MIN_VALIDA_G) se ignoran y no cuentan como dato.
+  if (is_balanza && balanza.is_ready()) {
+    float lectura = balanza.get_units(1);
+    if (lectura >= BALANZA_MIN_VALIDA_G) {
+      peso_agua = lectura;
+      t_balanza_ultimo_dato = millis();
+    }
+  }
+  //Corte por tanque lleno, con histéresis. Con la balanza en error no se corta (se condensa).
+  if (balanza_con_error()) {
+    tanqueLleno = false;
+  } else if (peso_agua > TANQUE_LLENO_G) {
+    tanqueLleno = true;
+  } else if (peso_agua < TANQUE_REANUDA_G) {
+    tanqueLleno = false;
+  }
+
+  //dt se actualiza en todas las ramas: si el PI estuvo inactivo (no viable, apagado, sensor en NaN
+  //o volcado) no debe integrar de golpe todo ese tiempo. Se limita a dt_max_ctrl como protección.
   unsigned long t_ctrl_actual = millis();
   float dt = (t_ctrl_actual - t_ctrl_prev)/1000.0;  // en segundos (con decimal)
   t_ctrl_prev = t_ctrl_actual;
   if (dt > dt_max_ctrl) dt = dt_max_ctrl;
 
-  if (!isnan(tempAmbiente2) && !isnan(humedad2) && !isnan(c12)) {
+  bool sensores_ok = !isnan(tempAmbiente2) && !isnan(humedad2) && !isnan(c12);
+  if (sensores_ok) {
     puntoRocio = calcularPuntoRocio(tempAmbiente2, humedad2);            //rocío real
     objetivoPlaca = max(puntoRocio - MARGEN_BAJO_ROCIO, TEMP_PLACA_MIN); //límite contra la escarcha
-    //Condición de vabilidad (con histéresis para evitar oscilar en el umbral):
-    //la Peltier no puede llevar la placa al objetivo si el ambiente está demasiado por encima
-    float umbral_viabilidad = objetivoPlaca - peltier_temp_amb_max;
-    if (!peltier_on) umbral_viabilidad -= viabilidad_histeresis;
-    if (tempAmbiente2 >= umbral_viabilidad){
-      pwm = 0;
-      analogWrite(pins.rpwm, (int)pwm);
-      peltier_on = false;
-      DBGLN("No se puede condensar debido a las condiciones ambientales");
-    } else {
-      error = objetivoPlaca - c12;
-
-      // Evitar acumulación excesiva (anti-windup)
-      errorAcumulado += error * dt;
-      errorAcumulado = constrain(errorAcumulado, -maxIntegracion, maxIntegracion);
-
-      salidaPI = kp * error + ki * errorAcumulado;
-      tempObjetivo = salidaPI + c12;
-
-      pwm = (tempObjetivo - tempAmbiente2) / peltier_delta_T;
-      pwm = constrain(pwm, 0, peltier_pwm_max);
-      analogWrite(pins.rpwm, (int)pwm); //Ejecutar el control
-      peltier_on = true;
+    //Condición de viabilidad, calculada con el PWM máximo del modo actual (con histéresis para
+    //no oscilar en el umbral): la Peltier no puede llevar la placa al objetivo si el ambiente
+    //está demasiado por encima. Apagada por horario no se evalúa.
+    if (modo != PELTIER_APAGADA) {
+      float umbral_viabilidad = objetivoPlaca - pwm_max * peltier_delta_T;
+      if (!es_viable && !viabilidad_sin_histeresis) umbral_viabilidad -= viabilidad_histeresis;
+      es_viable = tempAmbiente2 < umbral_viabilidad;
+      viabilidad_sin_histeresis = false;
     }
+  }
 
-  } else {
+  bool encender;
+  if (modo == PELTIER_APAGADA) {
+    pwm = 0;
+    encender = false;
+  } else if (tanqueLleno) {
+    pwm = 0;
+    encender = false;
+    DBGLN("Tanque lleno: no se condensa");
+  } else if (!sensores_ok) {
+    //Decisión consciente: con un sensor del control en NaN la celda va al máximo del modo
     DBGLN("No es posible ejecutar el control ....Encendiendo celda");
-    //peltier_on = false;
-    peltier_on = true;
-    pwm = 255;
-    analogWrite(pins.rpwm,(int)pwm); //Ejecutar el control
+    pwm = pwm_max;
+    encender = true;
+  } else if (!es_viable) {
+    pwm = 0;
+    encender = false;
+    DBGLN("No se puede condensar debido a las condiciones ambientales");
+  } else if (modo == PELTIER_PWM_FIJO) {
+    pwm = pwm_max;
+    encender = true;
+  } else {  //PELTIER_PI
+    error = objetivoPlaca - c12;
+
+    // Evitar acumulación excesiva (anti-windup)
+    errorAcumulado += error * dt;
+    errorAcumulado = constrain(errorAcumulado, -maxIntegracion, maxIntegracion);
+
+    salidaPI = kp * error + ki * errorAcumulado;
+    tempObjetivo = salidaPI + c12;
+
+    pwm = (tempObjetivo - tempAmbiente2) / peltier_delta_T;
+    pwm = constrain(pwm, 0, pwm_max);
+    encender = true;
   }
+  analogWrite(pins.rpwm, (int)pwm); //Ejecutar el control
+  peltier_on = encender;
 
-  unsigned long t_now = millis();
-  if (is_ventilador_chimenea_on) {
-    if (t_now - t_ventilador_ultimo_on >= ventilador_chimenea_on_T) {
-      ApagarVentiladorChimenea();
-      is_ventilador_chimenea_on = false;
-      t_ventilador_ultimo_on = t_now;
-    }
-  } else {
-    if (t_now - t_ventilador_ultimo_on >= ventilador_chimenea_off_T) {
-      PrenderVentiladorChimenea();
-      is_ventilador_chimenea_on = true;
-      t_ventilador_ultimo_on = t_now;
-    }
-  }
-
-
-
-  //Aquí se debe modificar peso_agua. Evitar método bloqueante
-  // Lectura sin bloqueo: HX711::read() espera indefinidamente si el chip no está listo
-  // (p.ej. balanza desconectada). Si no hay dato nuevo se conserva el último peso;
-  // W1 ya se promedia en la ventana de reporte.
-  if (is_balanza && balanza.is_ready()) {
-    peso_agua = balanza.get_units(1);
-  }
+  actualizar_ventiladores();
 
   float suma = 0;
   for (int i = 0; i < 10; i++) {
@@ -204,7 +216,10 @@ void CondenserControl::leer_sensores_y_controlar(){
   DBG("Temp Objetivo: "); DBGLN(tempObjetivo);
   DBG("PWM aplicado: "); DBGLN(pwm);
   DBG("Correinte 4: "); DBGLN(voltajeCorrienteFiltrada);
-  DBG("Peso : "); DBGLN(peso_agua);
+  DBG("Peso : "); DBG(peso_agua); DBG(balanza_con_error() ? " (balanza con ERROR)" : "");
+  DBGLN(tanqueLleno ? " | tanque LLENO" : "");
+  DBG("Modo Peltier: "); DBG(modo == PELTIER_APAGADA ? "apagada" : (modo == PELTIER_PWM_FIJO ? "PWM fijo" : "PI"));
+  DBG(" (max "); DBG(pwm_max); DBG(") viable="); DBG(es_viable); DBG(" on="); DBGLN(peltier_on);
   DBG("Lluvia: "); DBG(aguaPresente ? "SI" : "NO"); DBG(" (A2="); DBG(lluviaCruda); DBGLN(")");
   DBGLN("-----------");
 }
@@ -240,6 +255,56 @@ void CondenserControl::promediar(float out[N_DATA_CRL]) {
 
 
 
+// Cambia el modo de la Peltier (lo decide el horario). Al cambiar se reinicia el integral y la
+// viabilidad se evalúa de nuevo sin histéresis.
+void CondenserControl::set_modo(ModoPeltier modo_, float pwm_max_) {
+  if (modo_ == modo && pwm_max_ == pwm_max) return;
+  modo = modo_;
+  pwm_max = pwm_max_;
+  errorAcumulado = 0.0;
+  es_viable = false;
+  viabilidad_sin_histeresis = true;
+}
+
+bool CondenserControl::balanza_con_error() const {
+  return !is_balanza || (millis() - t_balanza_ultimo_dato > BALANZA_TIMEOUT_MS);
+}
+
+// Los ventiladores van con la Peltier: apagados si peltier_on es false. Encendidos, el principal
+// queda prendido y la chimenea cicla (ventilador_chimenea_on_T / ventilador_chimenea_off_T).
+void CondenserControl::actualizar_ventiladores() {
+  unsigned long t_now = millis();
+  if (!peltier_on) {
+    if (ventiladores_on) {
+      ApagarVentiladorPrincipal();
+      ApagarVentiladorChimenea();
+      ventiladores_on = false;
+    }
+    return;
+  }
+  if (!ventiladores_on) {
+    PrenderVentiladorPrincipal();
+    PrenderVentiladorChimenea();
+    ventiladores_on = true;
+    is_ventilador_chimenea_on = true;
+    t_ventilador_ultimo_on = t_now;
+    return;
+  }
+  if (is_ventilador_chimenea_on) {
+    if (t_now - t_ventilador_ultimo_on >= ventilador_chimenea_on_T) {
+      ApagarVentiladorChimenea();
+      is_ventilador_chimenea_on = false;
+      t_ventilador_ultimo_on = t_now;
+    }
+  } else {
+    if (t_now - t_ventilador_ultimo_on >= ventilador_chimenea_off_T) {
+      PrenderVentiladorChimenea();
+      is_ventilador_chimenea_on = true;
+      t_ventilador_ultimo_on = t_now;
+    }
+  }
+}
+
 void CondenserControl::PrenderVentiladorPrincipal(){
   analogWrite(pins.enb, 255);
 }
@@ -267,6 +332,7 @@ void CondenserControl::balanzaInicial() {
   }
 
   is_balanza = true;
+  t_balanza_ultimo_dato = millis();
   byte flag = EEPROM.read(EEPROM_FLAG_ADDR);
 
   if (flag != CALIB_OK || borrar_datos_eeprom) {
@@ -317,10 +383,13 @@ void CondenserControl::ejecutar_volcado() {
 
   volcar_plato_y_renovar();
 
-  // Volver a operación normal
-  PrenderVentiladorPrincipal();
-  // Restaurar la chimenea al estado que espera su ciclo (15 s on / 120 s off)
-  if (is_ventilador_chimenea_on) PrenderVentiladorChimenea();
+  // Volver a operación normal: los ventiladores solo si estaban encendidos (van con la Peltier);
+  // la Peltier recupera su PWM en el siguiente ciclo de control
+  if (ventiladores_on) {
+    PrenderVentiladorPrincipal();
+    // Restaurar la chimenea al estado que espera su ciclo (15 s on / 120 s off)
+    if (is_ventilador_chimenea_on) PrenderVentiladorChimenea();
+  }
   errorAcumulado = 0.0;  // evitar windup acumulado durante la pausa
   DBGLN("Volcado completado — reanudando control");
 }
@@ -346,6 +415,7 @@ void CondenserControl::volcar_plato_y_renovar() {
 
   // 3. Trabar el plato y soltar el volcado (el seguro lo sujeta)
   seguro.write(SEGURO_TRABADO);
+  delay(ESPERA_TRABA_MS);         //que el seguro termine de entrar antes de soltar el plato
   volcado.detach();
 
   // 4. Renovar el agua con el plato trabado
@@ -365,6 +435,7 @@ void CondenserControl::reset_plato_pos() {
   seguro.write(SEGURO_SUELTO);    //deja que el volcado lleve el plato a reposo
   delay(ESPERA_SEGURO_MS);
   seguro.write(SEGURO_TRABADO);
+  delay(ESPERA_TRABA_MS);         //que el seguro termine de entrar antes de soltar el plato
   volcado.detach();
 }
 

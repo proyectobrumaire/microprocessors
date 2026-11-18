@@ -146,13 +146,34 @@ Cuando la app móvil sincroniza la hora vía HTTP (`POST /set_time`), el ESP32 r
 | 0x80 | BOOT        | Al final de `setup()`. **Delimita sesiones en el log.** |
 | 0x81 | BIRD        | El ultrasonido detecta un objeto (eco entre 50 y 2500 µs ≈ 1–43 cm). Cooldown de 6 s entre detecciones. Incluye fotos. |
 | 0x82 | PERIODIC    | En cada interrupción del timer del RTC (cada 5 min). |
-| 0x83 | PELTIER_ON  | El control pasa a condición viable y activa el PI. También cuando un sensor del control da NaN (la celda queda a PWM 255). |
-| 0x84 | PELTIER_OFF | La condensación deja de ser viable (`T_amb ≥ rocío + ~19 °C`). Histéresis de 1 °C para volver a PELTIER_ON. |
-| 0x85 | VOLCADO     | Tras terminar la secuencia de vaciado y relleno del plato. Una vez al día, desde `HORA_VOLCADO`:`MINUTO_VOLCADO` (hora local del RTC, configurable en `Full_Condenser.ino`; resolución de 5 min). |
+| 0x83 | PELTIER_ON  | La Peltier (y los ventiladores) se encienden: entra una franja de condensación con condición viable, vuelve a ser viable, el tanque baja de 1.9 L, o un sensor del control da NaN dentro de una franja (la celda queda al máximo del modo). |
+| 0x84 | PELTIER_OFF | La Peltier (y los ventiladores) se apagan: termina la franja, la condensación deja de ser viable (histéresis de 1 °C) o el tanque supera 2 L. |
+| 0x85 | VOLCADO     | Tras terminar la secuencia de vaciado y relleno del plato. Con hora válida: una vez al día entre 15:00 y 16:00 si pasaron 5 días o el tanque tiene ≥ 1 L. Con hora inválida: con ≥ 1 L (cada 24 h como mínimo, 1 h después del arranque). Ver "Rutina del Arduino". |
 
 En el ESP32, un código desconocido se registra como `INVALID_EV`.
 
-`PELTIER_ON/OFF` reflejan la **viabilidad** del control, no si el PWM es mayor que 0: con el PI activo el PWM puede valer 0. La pausa del vaciado no genera PELTIER_OFF.
+`PELTIER_ON/OFF` reflejan si la Peltier está **habilitada** (horario, viabilidad y tanque), no si el PWM es mayor que 0: con el PI activo el PWM puede valer 0. La pausa del vaciado no genera PELTIER_OFF.
+
+---
+
+## Rutina del Arduino (horario, tanque y vaciado)
+
+Todo se evalúa cada segundo con la hora local del RTC (no depende del tick de 5 min). Constantes en `Full_Condenser.ino` y `CondenserControl.h`.
+
+**Hora válida**: el RTC responde por I2C (timeout de `Wire`), los campos están en rango (días del mes con bisiestos) y la fecha está entre el **piso** y el **techo**. Piso = máx(fecha de compilación, fecha guardada en EEPROM 19–21); la EEPROM se actualiza con la primera lectura válida de cada día nuevo y con cada `SET_TIME` (la hora del teléfono es absoluta, no se valida; su fecha reemplaza el piso aunque sea anterior). Techo = fecha de compilación + 10 años. Atrapa, por ejemplo, el RTC reiniciado a `2024-01-01` visto en los datos.
+
+| Situación | Peltier y ventiladores |
+|---|---|
+| Hora válida, 04:00–06:00 | PWM fijo 230 (90 %, sin PI) si es viable con 230 |
+| Hora válida, 08:00–10:00 | PI con tope 204 (80 %) si es viable con 204 |
+| Hora válida, resto del día | Apagados |
+| Hora inválida | PI con tope 255 si es viable con 255 |
+| Sensor del control en NaN | Máximo del modo (230 / 204 / 255); apagados fuera de franja |
+| Tanque > 2.0 L (siempre) | Apagados hasta que baje de 1.9 L |
+
+**Balanza** (tanque, gramos, tara del tanque vacío en EEPROM): con error si no se encontró al arrancar o lleva > 10 s sin datos; lecturas < −200 g se ignoran. Con error no hay corte por tanque (se condensa) y `W1_K` repite el último valor.
+
+**Vaciado** (válvula 45 s): con hora válida, una vez al día entre 15:00 y 16:00 si pasaron ≥ 5 días desde el último (fecha en EEPROM 16–18; sin registro o con registro en el futuro → toca), o si el tanque tiene ≥ 1 L; con la balanza en error, solo los 5 días. Con hora inválida (por `millis()`): pasada 1 h desde el arranque, con ≥ 1 L y ≥ 24 h desde el último vaciado; con la balanza en error, cada 5 días.
 
 ---
 

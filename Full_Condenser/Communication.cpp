@@ -21,6 +21,9 @@ CondenserCom::CondenserCom(const Pins& pi)
 
 void CondenserCom::iniciar_comunicaciones(){
   s_self = this;  // registrar instancia activa
+  // Timeout del I2C: si el bus se cuelga (RTC desconectado o SDA/SCL en bajo) Wire no bloquea
+  // el loop; get_fecha_hora lo reporta.
+  Wire.setWireTimeout(25000, true);
   Serial3.begin(115200);  //Comuninicación con ESP32CAM
   link.begin(Serial3); //Comuninicación con ESP32CAM
 
@@ -222,10 +225,26 @@ bool CondenserCom::wait_for_ack(uint8_t expected_cmd){
 
 
 
-// Fecha y hora local del RTC (año en 2 dígitos, igual que en los timestamps de los eventos)
-void CondenserCom::get_fecha_hora(uint8_t &yy, uint8_t &mm, uint8_t &dd, uint8_t &hh, uint8_t &mi) {
+// Fecha y hora local del RTC (año en 2 dígitos, igual que en los timestamps de los eventos).
+// Si el RTC no responde, Wire.read() devuelve -1 y los campos salen fuera de rango (o el año
+// negativo): se marcan con 0xFF para que la validación los rechace.
+bool CondenserCom::get_fecha_hora(uint8_t &yy, uint8_t &mm, uint8_t &dd, uint8_t &hh, uint8_t &mi, uint8_t &ss) {
+  Wire.clearWireTimeoutFlag();
   p.get_time();
-  yy = p.year % 100; mm = p.month; dd = p.day; hh = p.hour; mi = p.minute;
+  bool ok = !Wire.getWireTimeoutFlag();
+  yy = (p.year >= 0) ? (uint8_t)(p.year % 100) : 0xFF;
+  mm = (p.month  >= 0 && p.month  < 256) ? p.month  : 0xFF;
+  dd = (p.day    >= 0 && p.day    < 256) ? p.day    : 0xFF;
+  hh = (p.hour   >= 0 && p.hour   < 256) ? p.hour   : 0xFF;
+  mi = (p.minute >= 0 && p.minute < 256) ? p.minute : 0xFF;
+  ss = (p.second >= 0 && p.second < 256) ? p.second : 0xFF;
+  return ok;
+}
+
+bool CondenserCom::takeSetTimeFlag() {
+  bool v = flag_set_time;
+  flag_set_time = false;
+  return v;
 }
 
 void CondenserCom::recieve_commands(){
@@ -253,7 +272,8 @@ void CondenserCom::recieve_commands(){
             p.hour = ts[3];
             p.minute = ts[4];
             p.second = ts[5];
-            p.set_time();
+            p.set_time();  //sin validar: la hora del teléfono se toma como absoluta
+            flag_set_time = true;
             break;
 
           default:

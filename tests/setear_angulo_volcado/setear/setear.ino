@@ -1,8 +1,8 @@
-#include <Servo.h>0
+#include <Servo.h>
 
 
 const uint8_t PIN_VOLCADO = 11;                  // Pin del servomotor de volcado
-const int ANGULO_INICIAL = 90;                   // Cambia este valor al ángulo que necesites (0 a 180) reposo
+const int ANGULO_INICIAL = 100;                  // Cambia este valor al ángulo que necesites (0 a 180); reposo = 100
 const uint8_t POWER_PINS[] = {5, 4, 39, 33, 30, 31, 2, 28, 29, 3}; // Pines de potencia auxiliares de tu hardware
 
 Servo volcado;
